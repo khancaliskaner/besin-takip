@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Besin Takip — Testler</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;margin:24px}.ok{color:#0a7a3d}.fail{color:#c0271f;font-weight:600}.warn{color:#8a6100}</style>
+</head>
+<body>
+<h1>Besin Takip — Testler</h1>
+<pre id="out">çalışıyor…</pre>
+<script src="../js/nutrients.js"></script>
+<script src="../js/calc.js"></script>
+<script src="../js/foods-data.js"></script>
+<script src="../js/foods.js"></script>
+<script src="../js/storage.js"></script>
+<script src="../js/backup.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function t(ad, kosul) { if (!kosul) fails++; out.push((kosul ? 'GEÇTİ  ' : 'BAŞARISIZ  ') + ad); }
+  function yakin(a, b, e) { return Math.abs(a - b) <= (e || 1e-9); }
+
+  /* --- Hesaplama --- */
+  t('150 g × 52 kcal/100 g = 78 kcal', yakin(Calc.scale({ kcal: 52 }, 150).kcal, 78));
+  t('Bilinmeyen değer null kalır (0 olmaz)', Calc.scale({ kcal: 52 }, 150).lif === null);
+  t('Glisemik indeks miktarla ölçeklenmez', Calc.scale({ gi: 55 }, 300).gi === 55);
+
+  var s = Calc.sum([
+    { degerler: { kcal: 100, lif: 2 }, gram: 200 },
+    { degerler: { kcal: 50, lif: null }, gram: 100 }
+  ]);
+  t('Toplam kcal = 250', yakin(s.toplam.kcal, 250));
+  t('Toplam lif yalnızca bilinenleri sayar (4)', yakin(s.toplam.lif, 4));
+  t('Lif için eksik veri sayacı = 1', s.eksik.lif === 1);
+  t('Kalori için eksik veri sayacı = 0', s.eksik.kcal === 0);
+
+  t('fmt: null -> "—"', Calc.fmt(null, 'g') === '—');
+  t('fmt: 78 kcal -> "78"', Calc.fmt(78.4, 'kcal') === '78');
+
+  /* --- Türkçe arama normalleştirme --- */
+  t('norm("Işık ŞEKER Çay") = "isik seker cay"', Calc.norm('Işık ŞEKER Çay') === 'isik seker cay');
+  t('norm("İncir") = "incir"', Calc.norm('İncir') === 'incir');
+  t('norm("Ğ ö ü") = "g o u"', Calc.norm('Ğ ö ü') === 'g o u');
+  t('Arama "sut" -> Süt ürünleri bulur', Foods.search('sut').some(function (f) { return f.ad.indexOf('Süt') === 0; }));
+  t('Arama "MERCİMEK" bulur', Foods.search('MERCİMEK').length >= 2);
+  t('Arama "ekmek kepek yok" -> boş', Foods.search('zzzz').length === 0);
+  t('Kategori filtresi çalışır', Foods.search('', { kategori: 'Meyve' }).every(function (f) { return f.kategori === 'Meyve'; }));
+
+  /* --- Veri bütünlüğü --- */
+  var ids = {}, dup = [];
+  Foods.ALL.forEach(function (f) { if (ids[f.id]) dup.push(f.ad); ids[f.id] = 1; });
+  t('Tüm besin kimlikleri benzersiz' + (dup.length ? ' (çakışan: ' + dup.join(', ') + ')' : ''), dup.length === 0);
+
+  var bosKcal = Foods.ALL.filter(function (f) { return f.degerler.kcal == null; });
+  t('Her besinde kalori değeri var', bosKcal.length === 0);
+  var negatif = Foods.ALL.filter(function (f) { return Object.keys(f.degerler).some(function (k) { return f.degerler[k] != null && f.degerler[k] < 0; }); });
+  t('Negatif değer yok', negatif.length === 0);
+  var portBos = Foods.ALL.filter(function (f) { return !f.porsiyonlar.length || !(f.varsayilan_g > 0); });
+  t('Her besinin porsiyonu ve varsayılan gramı var', portBos.length === 0);
+  t('Makro toplamı 100 g’ı aşmıyor (protein+karb+yağ ≤ 101)', Foods.ALL.every(function (f) {
+    var d = f.degerler; return (d.protein + d.karb + d.yag) <= 101;
+  }));
+  var tutarsiz = Foods.ALL.filter(function (f) {
+    var d = f.degerler;
+    return !((d.seker == null || d.seker <= d.karb + 0.05) && (d.doymus == null || d.doymus <= d.yag + 0.05));
+  }).map(function (f) { return f.ad; });
+  t('Şeker ≤ karbonhidrat, doymuş ≤ yağ' + (tutarsiz.length ? ' (sorunlu: ' + tutarsiz.join(', ') + ')' : ''), tutarsiz.length === 0);
+
+  /* --- Yedekleme mantığı --- */
+  var S2 = Storage.SCHEMA_VERSION;
+  var ornek = {
+    settings: [{ key: 'tema', value: 'koyu' }, { key: 'sonYedek', value: '2026-01-01T00:00:00Z' }],
+    favorites: [{ id: 'h-bal' }], recents: [{ id: 'h-bal', ts: 5 }],
+    log: [{ id: 'a1', tarih: '2026-09-20', ogun: 'öğle', besin_id: 'h-bal', miktar_g: 20, saat: '12:30' },
+          { id: 'a2', tarih: '2026-09-20', ogun: 'kahvaltı', besin_id: 'h-ayran', miktar_g: 200 }]
+  };
+  var paket = Backup.paketle(ornek, S2);
+  t('Paket: sonYedek dışarı yazılmaz', !paket.settings.some(function (s) { return s.key === 'sonYedek'; }));
+  t('Paket: uygulama ve sürüm işaretli', paket.uygulama === 'besin-takip' && paket.schemaVersion === S2);
+  var js = JSON.parse(JSON.stringify(paket));
+  var d1 = Backup.dogrula(js, S2);
+  t('Geçerli yedek kabul edilir', d1.ok && d1.veri.log.length === 2);
+  t('Bozuk: nesne değil', !Backup.dogrula([], S2).ok && !Backup.dogrula(null, S2).ok && !Backup.dogrula('x', S2).ok);
+  t('Bozuk: başka uygulamanın dosyası', !Backup.dogrula({ uygulama: 'baska', schemaVersion: 1 }, S2).ok);
+  t('Bozuk: daha yeni sürüm reddedilir', !Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: S2 + 1 }, S2).ok);
+  function bozLog(degis) { var c = JSON.parse(JSON.stringify(paket)); degis(c.log[0]); return Backup.dogrula(c, S2).ok; }
+  t('Bozuk: geçersiz tarih (2026-02-30)', !bozLog(function (e) { e.tarih = '2026-02-30'; }));
+  t('Bozuk: geçersiz öğün', !bozLog(function (e) { e.ogun = 'gece'; }));
+  t('Bozuk: negatif miktar', !bozLog(function (e) { e.miktar_g = -5; }));
+  t('Bozuk: miktar sayı değil', !bozLog(function (e) { e.miktar_g = '20'; }));
+  t('Bozuk: besin_id yok', !bozLog(function (e) { delete e.besin_id; }));
+  t('Bozuk: yinelenen kimlik', (function () { var c = JSON.parse(JSON.stringify(paket)); c.log[1].id = 'a1'; return !Backup.dogrula(c, S2).ok; })());
+  var v1 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 1, settings: [{ key: 'tema', value: 'acik' }], favorites: [{ id: 'h-bal' }] }, S2);
+  t('Göç: v1 yedeği (log yok) güncel sürüme yükseltilir', v1.ok && v1.veri.schemaVersion === S2 && Array.isArray(v1.veri.log) && v1.veri.log.length === 0);
+  var v2 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 2, log: [{ id: 'z1', tarih: '2026-09-22', ogun: 'öğle', besin_id: 'h-bal', miktar_g: 20 }] }, S2);
+  t('Göç: v2 yedeği kayıp olmadan güncel sürüme yükseltilir', v2.ok && v2.veri.schemaVersion === S2 && v2.veri.log.length === 1 && v2.veri.log[0].miktar_g === 20);
+  t('Şema sürümü 3 (log.tarih dizini onarımı)', S2 === 3);
+
+  var csv = Backup.csv(ornek.log, Foods.BY_ID);
+  var satirlar = csv.replace('﻿', '').trim().split('\r\n');
+  t('CSV: UTF-8 BOM ile başlar', csv.charAt(0) === '﻿');
+  t('CSV: başlık + 2 kayıt satırı', satirlar.length === 3);
+  t('CSV: kahvaltı öğleden önce sıralanır', satirlar[1].indexOf('kahvaltı') > -1 && satirlar[2].indexOf('öğle') > -1);
+  t('CSV: her satırda aynı sütun sayısı', satirlar.every(function (s) { return s.split(';').length === satirlar[0].split(';').length; }));
+  t('CSV: ondalık virgül (Ayran 200 g = 72 kcal, Bal 20 g protein 0,06)', satirlar[1].split(';')[6] === '72' && satirlar[2].indexOf('0,06') > -1);
+  t('CSV: formül enjeksiyonu engellenir', Backup.hucre('=CMD()') === "'=CMD()" && Backup.hucre('a;b') === '"a;b"' && Backup.hucre('a"b') === '"a""b"');
+  t('CSV: bilinmeyen değer boş bırakılır (0 değil)', Backup.hucre(null) === '');
+
+  out.push('');
+  out.push('Besin sayısı: ' + Foods.ALL.length + '  (hedef: 500+)');
+  out.push('Doğrulanmamış besin: ' + Foods.ALL.filter(function (f) { return !f.dogrulandi; }).length);
+
+  /* --- Veri kalite uyarısı: Atwater tutarlılığı (bilgi amaçlı, test başarısız saymaz) --- */
+  var sapma = [];
+  Foods.ALL.forEach(function (f) {
+    var d = f.degerler, alkolKcal = (d.alkol || 0) * 7;
+    var hesap = d.protein * 4 + (d.karb - (d.lif || 0)) * 4 + (d.lif || 0) * 2 + d.yag * 9 + alkolKcal;
+    if (d.kcal < 15) return;
+    var oran = Math.abs(hesap - d.kcal) / d.kcal;
+    if (oran > 0.2) sapma.push(f.ad + ' (yazılan ' + d.kcal + ', hesaplanan ' + Math.round(hesap) + ' kcal)');
+  });
+  out.push('');
+  out.push('Atwater sapması >%20 olan besinler (gözden geçir): ' + sapma.length);
+  sapma.forEach(function (x) { out.push('  UYARI  ' + x); });
+
+  /* --- Depolama gidiş-dönüş (bellek modu; IndexedDB açılmadan): yedek al -> sil -> geri yükle --- */
+  var sirali = Storage.degistirHepsini(ornek)
+    .then(function () { return Storage.exportParcalari(); })
+    .then(function (p) {
+      var yedek = JSON.parse(JSON.stringify(Backup.paketle(p, S2)));
+      t('Depolama: dışa aktarılan yedek 2 öğün kaydı içerir', yedek.log.length === 2);
+      return Storage.degistirHepsini({}).then(function () { return Storage.tumLog(); }).then(function (bos) {
+        t('Depolama: silince hiç kayıt kalmaz', bos.length === 0);
+        var d = Backup.dogrula(yedek, S2);
+        return Storage.degistirHepsini(d.veri);
+      }).then(function () { return Storage.tumLog(); }).then(function (geri) {
+        t('Depolama: içe aktarınca kayıtlar geri gelir', geri.length === 2 && geri.some(function (e) { return e.id === 'a1' && e.miktar_g === 20 && e.saat === '12:30'; }));
+        return Storage.listLogByDate('2026-09-20');
+      }).then(function (gun) { t('Depolama: tarihe göre listeleme', gun.length === 2); });
+    })
+    .catch(function (e) { t('Depolama gidiş-dönüş hatasız (' + e + ')', false); });
+
+  sirali.then(function () {
+    out.push('');
+    out.push(fails === 0 ? 'SONUÇ: TÜM TESTLER GEÇTİ' : 'SONUÇ: ' + fails + ' TEST BAŞARISIZ');
+    var el = document.getElementById('out');
+    el.textContent = out.join('\n');
+    document.body.setAttribute('data-sonuc', fails === 0 ? 'gecti' : 'basarisiz');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Besin Takip</title>
+<link rel="stylesheet" href="css/style.css?v=0.3.3">
+</head>
+<body>
+<div class="app">
+  <nav class="menu" aria-label="Ana menü">
+    <div class="marka">Besin Takip</div>
+    <a href="#bugun" data-r="bugun">Bugün</a>
+    <a href="#gecmis" data-r="gecmis">Geçmiş</a>
+    <a href="#grafikler" data-r="grafikler">Grafikler</a>
+    <a href="#besinler" data-r="besinler">Besinlerim</a>
+    <a href="#hedefler" data-r="hedefler">Hedefler</a>
+    <a href="#ayarlar" data-r="ayarlar">Ayarlar / Yedek</a>
+    <div class="menu-alt">
+      <button id="tema-btn" type="button" class="ikincil">Koyu tema</button>
+      <div class="surum">Sürüm 0.3.3</div>
+    </div>
+  </nav>
+  <main tabindex="-1">
+    <div id="hatirlatma" class="hatirlatma" hidden></div>
+    <div id="icerik"><p class="alt-baslik">Yükleniyor…</p><noscript><p>Bu program çalışmak için tarayıcıda JavaScript gerektirir.</p></noscript></div>
+  </main>
+</div>
+<div id="uyari" class="uyari" hidden></div>
+<dialog id="ayrinti" aria-labelledby="ayrinti-baslik"></dialog>
+<dialog id="secici" aria-label="Besin ekle"></dialog>
+
+<script src="lib/chart.umd.min.js?v=0.3.3"></script>
+<script src="js/nutrients.js?v=0.3.3"></script>
+<script src="js/calc.js?v=0.3.3"></script>
+<script src="js/storage.js?v=0.3.3"></script>
+<script src="js/foods-data.js?v=0.3.3"></script>
+<script src="js/foods.js?v=0.3.3"></script>
+<script src="js/backup.js?v=0.3.3"></script>
+<script src="js/ui.js?v=0.3.3"></script>
+</body>
+</html>
