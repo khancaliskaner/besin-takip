@@ -100,6 +100,22 @@ Tema (açık/koyu), birim, hedefler, son yedek tarihi, kullanıcı profili (boy,
 - Veri dosyası ayrı tutulmalı (`foods.json`) — uygulama koduna dokunmadan genişletilebilsin.
 - **Hata önleme:** Değerler uydurulmamalı; emin olunmayan besin "doğrulanmamış" işaretlenmeli.
 
+### 7.1 Marka ürünler (2026-09-22, kullanıcı isteği)
+
+Kullanıcı isteğiyle besin veritabanı **525 besine** çıkarıldı (`js/foods-data.js`); hazır (jenerik) besinlerin yanına, mevcut kategoriler içine marka ürünler eklendi:
+
+- **Takviye:** Big Boy, HardLine, ProteinOcean, Weider, MyProtein, Warrior, Optimum Nutrition, Predator Nutrition, Sponser, Vale Fitness whey/vegan/kazein çeşitleri (çikolata/vanilya/muz/çilek/fındık aromaları) + BCAA, glutamin, kreatin HCL, beta-alanin, pre-workout, L-karnitin, multivitamin, balık yağı, ZMA, kolajen, elektrolit tozu, protein bar, weight gainer.
+- **Tahıl/ekmek:** Uno, Yeşilvadi, Öz Kaya, Halk Ekmek, Bimeks, Sinangil ekmek çeşitleri + kinoa, karabuğday, esmer pirinç gibi tahıllar.
+- **Süt ürünleri:** Sütaş, Pınar, İçim, Eker, Sek, Torku, Danone/Activia süt/yoğurt/ayran/peynir/tereyağı çeşitleri.
+- **Paketli ürün:** Lay's, Ruffles, Doritos, Cheetos, Pringles, Ülker, Eti, Torku, Kellogg's, Oreo, Snickers, Mars, Twix, Bounty, M&M's, Skittles.
+- **Tatlı/şekerleme:** Ülker, Eti, Şölen, Milka, Toblerone, KitKat + ev tatlıları (kazandibi, güllaç, revani vb.).
+- **Kahvaltılık:** Nutella, Komili, Balparmak, Marmarabirlik, Tadım, Dr. Oetker, Tamek, Aroma.
+- **İçecek:** Coca-Cola, Pepsi, Fanta, Sprite, Fuse Tea, Lipton, Nescafe, Redbull, Burn, Cappy, Dimes, Uludağ/Yedigün gazoz, Beypazarı.
+- **Fast-food:** McDonald's, Burger King, KFC, Domino's, Pizza Hut, Subway, Popeyes, Little Caesars, Simit Sarayı, Starbucks.
+- Ayrıca jenerik kategorilere (sebze, meyve, et/balık, baklagil, kuruyemiş, ana yemek, çorba) onlarca yeni kalem eklendi.
+
+Tüm yeni satırlar da **"doğrulanmamış"** — marka değerleri paket etiketlerinden değil, tipik/yaklaşık değerlerden alınmıştır; ambalajdaki gerçek değerle farklılık gösterebilir. `tests/test.html` ile doğrulandı: 525 besin, tekil kimlik, tutarlı makro/porsiyon alanları; yalnızca 5 kalemde bilgilendirici Atwater sapma uyarısı var (test başarısızlığı değil).
+
 ## 8. ARAYÜZ İLKELERİ
 
 - Sade, bol boşluklu, tek vurgu rengi; açık ve koyu tema.
@@ -115,7 +131,7 @@ Tema (açık/koyu), birim, hedefler, son yedek tarihi, kullanıcı profili (boy,
 - [x] İnternet bağlantısı kapalıyken tüm özellikler çalışıyor. *(dış kaynak/CDN yok — ölçüldü: 12 kaynağın hepsi yerel)*
 - [x] Program kapatılıp açılınca veriler duruyor. *(gerçek tarayıcı + IndexedDB ile doğrulandı, 2026-09-22)*
 - [x] Yedeği dışa aktar → verileri sil → içe aktar → her şey geri geliyor.
-- [ ] En az 500 besin (şu an **205**), 30+ besin değeri alanı mevcut *(41 alan hazır; besin sayısı Aşama 1’in kalan işi — kullanıcı kararıyla sonraya bırakıldı)*.
+- [x] En az 500 besin, 30+ besin değeri alanı mevcut. *(2026-09-22: **525 besin**, 41 alan; marka ürünler dahil — bkz. bölüm 7.1)*
 - [x] Bir besin ve bir öğün için tam ayrıntı tablosu açılabiliyor.
 - [x] Grafikler (6.2’deki 1–5) çalışıyor ve doğru toplamları gösteriyor. *(4. maddede kilo/su v2’ye bağlı)*
 - [x] Toplamlar elle hesapla karşılaştırıldığında tutuyor (birim testi: örn. 150 g × 52 kcal/100 g = 78 kcal). *(`tests/test.html`)*
@@ -139,7 +155,7 @@ Tema (açık/koyu), birim, hedefler, son yedek tarihi, kullanıcı profili (boy,
 | Aşama | İçerik | Durum |
 |---|---|---|
 | 0 | Mimari kararı ve iskelet | ☑ (2026-09-22) |
-| 1 | Besin veritabanı (`foods-data.js`) ve arama | ◐ Arama/kategori/favori/son kullanılanlar hazır; **205 / 500+ besin**, hepsi "doğrulanmamış" |
+| 1 | Besin veritabanı (`foods-data.js`) ve arama | ☑ (2026-09-22, sürüm 0.5.2) — **525 / 500+ besin** (marka ürünler dahil), hepsi "doğrulanmamış" |
 | 2 | Günlük giriş sayfası + öğünler + hesaplama | ☑ (2026-09-22) — favori öğün kaydetme hariç (Aşama 6'ya bırakıldı) |
 | 3 | Kalıcı hafıza (IndexedDB) + yedek/içe aktarma | ☑ (2026-09-22) — gerçek tarayıcıda kalıcılık doğrulandı |
 | 4 | Ayrıntı tabloları (besin/öğün) | ☑ Besin ve öğün ayrıntı tabloları hazır (öğün: toplam + besin katkıları + eksik veri notu) |
@@ -166,6 +182,7 @@ Tema (açık/koyu), birim, hedefler, son yedek tarihi, kullanıcı profili (boy,
 | 2026-09-22 | **Porsiyon adet çarpanı (sürüm 0.4.1).** Kullanıcı isteği: "1 ölçek whey 30 g, 2 ölçek 60 g gibi". Katları veri dosyasına elle yazmak yerine porsiyon seçicisine **adet alanı** eklendi: "1 ölçek (30 g) × 2 = 60 g". Tek ortak bileşen (`porsiyonSecici`) hem besin ayrıntısı hem öğüne ekleme penceresinde kullanılıyor, böylece **205 besnin tamamına** birden uygulandı; ondalık da serbest (0,5 dilim). Gram elle yazılınca porsiyon seçimi temizlenir. Doğrulandı: 1 ölçek=30 g, 2 ölçek=60 g/240 kcal, 0,5 ölçek=15 g/60 kcal. | Aşama 6 |
 | 2026-09-22 | **Aşama 6 tamam (sürüm 0.5.0).** **Şema 4**: `ozelBesinler`, `tarifler`, `favoriOgunler` depoları; v3→v4 göçü yazıldı, yedek biçimine eklendi ve her bölüm için içerik doğrulaması kondu (ad/kimlik/miktar/bileşen denetimleri). **Hedefler sayfası**: beş hedefin düzenlenmesi, makro–kalori tutarlılık uyarısı, "kaloriyi makrolara dağıt" (4/4/9), Mifflin-St Jeor ile **kaba enerji tahmini** (profil kaydedilir; sağlık/diyet önerisi olmadığı açıkça yazılı — bölüm 12'ye uygun). **Kendi besinim**: 41 alanlı form (makrolar açık, vitamin/mineral katlanır), boş alan `null` kalır (0 sayılmaz), porsiyon satırları elle tanımlanır. **Tarif**: bileşen ekle/çıkar, bileşenlerden 100 g değerleri hesaplanır, pişme kaybı için toplam ağırlık elle düzeltilebilir, canlı önizleme; tarif içinde tarif seçilemez (döngü engellendi). **Favori öğün**: bir öğünü adıyla kaydet, tek tıkla başka güne/öğüne ekle, sil; silinmiş besin varsa kalem atlanır ve sayısı bildirilir. Kendi besin/tarif Besinlerim sayfasında "Kendi besinlerim" sekmesinde, etiketli ve Düzenle/Sil düğmeli. Silmeden önce o besnin kaç öğün kaydında kullanıldığı sayılıp kullanıcıya bildiriliyor. Doğrulama sırasında iki hata bulundu ve düzeltildi: (1) yedekten geri yükleme ve "tümünü sil" sonrası kendi besinler arama listesine yüklenmiyordu (`besinListesiniTazele` eklendi); (2) "doğrulanmamış" uyarısı kullanıcının kendi besinlerini de sayıyordu — artık yalnızca hazır veritabanını sayıyor. Uçtan uca doğrulandı: kendi besin + tarif + favori öğün → yedek al → tümünü sil (Foods 205'e düştü) → geri yükle (207, tarif 124,6 kcal korundu). Tüm testler geçti (yeni: şema 4 paketi, v3→v4 göçü, 7 bozuk-kayıt reddi, tarif hesabı, Foods.guncelle). | Aşama 7 (cilalama/test) veya besin veritabanını 500+'a çıkarma |
 | 2026-09-22 | **Aşama 7 tamam (sürüm 0.5.1) — cilalama, tema, test, kabul kriterleri.** Kod düzeyinde tarama: yorum/TODO kalmadı, tekrar eden fonksiyon tanımı yok, konsola debug çıktısı yok. Görsel/işlevsel doğrulama: 1000 px ve 1280 px pencerede yatay taşma yok (Hedefler, Kendi besinim formu, Grafikler); koyu tema yeni eklenen tüm bileşenlerde (Hedefler, Kendi besinim/Tarif formları) doğru uygulanıyor. Uçtan uca denendi: kendi besin düzenleme (yeniden kayıt yerine güncelleniyor, tekilliği korunuyor), silme onay mesajı (kaç öğün kaydında kullanıldığını bildiriyor), hedeflerin sayfa yenilemesinden sonra kalıcılığı, öğün satırı silme onayı. **Daha önce hiç test edilmemiş kabul kriteri doğrulandı:** "10 000 kayıtta akıcı" — 10.030 gerçek IndexedDB kaydıyla ölçüldü: Bugün 11 ms, Geçmiş 11 ms, Besinlerim (207 satır) 75 ms, Grafikler (Chart.js dahil) 334 ms; hepsi rahat sınırlar içinde. Bulunan/düzeltilen sorun yok (önceki aşamalarda bulunanlar zaten giderilmişti). Kabul kriterleri (bölüm 9) ve arayüz ilkeleri (bölüm 8) tek tek gözden geçirildi ve belgelendi; yalnızca "500 besin" maddesi kullanıcı kararıyla açık bırakıldı. | Kullanıcı kararıyla: besin veritabanını 500+'a çıkarma ve diğer geliştirmeler ileride ele alınacak |
+| 2026-09-22 | **Besin veritabanı 205 → 525 (sürüm 0.5.2), kullanıcı isteği.** `js/foods-data.js`'e ~320 yeni satır eklendi: whey/takviye markaları (Big Boy, HardLine, ProteinOcean, Weider, MyProtein, Optimum Nutrition, Warrior, Predator, Sponser, Vale Fitness — çoklu aroma), ekmek markaları (Uno, Yeşilvadi, Öz Kaya, Halk Ekmek, Bimeks, Sinangil), süt ürünü markaları (Sütaş, Pınar, İçim, Eker, Sek, Torku, Danone/Activia), paketli atıştırmalık markaları (Lay's, Doritos, Cheetos, Pringles, Ülker, Eti, Kellogg's, Snickers, Mars vb.), fast-food zincirleri (McDonald's, Burger King, KFC, Domino's, Subway, Starbucks vb.), içecek markaları (Coca-Cola, Pepsi, Fanta, Redbull, Nescafe vb.) + jenerik sebze/meyve/et-balık/baklagil/kuruyemiş/ana yemek/çorba/tatlı genişlemesi. Ayrıntılar bölüm 7.1'de. Doğrulama: `tests/test.html` 525 besinle tüm testleri geçti (tekil kimlik, pozitif porsiyon, makro toplamı ≤101, şeker≤karb, doymuş≤yağ); yalnızca 5 kalemde bilgilendirici Atwater sapma uyarısı (test başarısızlığı değil, gerçek USDA verilerinde de görülen bilinen bir durum). Arayüzden doğrulandı: Türkçe karakter toleranslı arama marka adlarını buluyor ("sutas" → Sütaş), porsiyon adet çarpanı yeni ürünlerde de doğru (2 ölçek Big Boy Whey = 66 g = 249 kcal). Toplam boyut 436 KB (hedef 5 MB altı). Kabul kriteri "en az 500 besin" artık işaretli. | Kullanıcı kararıyla ertelenenler: kalan gelecek geliştirmeler (kilo/su takibi vb.) |
 
 **Notlar (Aşama 3):** Yedek dosyası `sonYedek` ayarını içermez (cihaza özgü). Yedeğe özel besinler (Aşama 6) eklendiğinde `schemaVersion` artırılıp `goc()`'a adım eklenmeli. Kabul kriteri "yedek → sil → içe aktar" otomatik doğrulandı; gerçek tarayıcıda (IndexedDB) elle de denenmeli.
 
