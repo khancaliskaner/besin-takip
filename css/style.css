@@ -236,6 +236,10 @@ details.tablo-gorunum[open] summary { margin-bottom: 8px; }
 /* Barkod tarama */
 .barkod-video { display: block; width: 100%; max-width: 420px; margin: 10px 0; border-radius: 10px;
   background: #000; box-shadow: var(--golge-2); }
+
+/* Fotoğrafla besin tanıma */
+.foto-onizleme { display: block; width: 100%; max-width: 420px; margin: 10px 0; border-radius: 10px;
+  box-shadow: var(--golge-2); }
 .form-satir input[type="number"] { width: 110px; }
 .porsiyon-satirlar { display: grid; gap: 8px; margin-bottom: 8px; }
 .porsiyon-satir { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

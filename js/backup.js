@@ -13,13 +13,17 @@
     return d.getFullYear() === p[0] && d.getMonth() === p[1] - 1 && d.getDate() === p[2];
   }
 
-  /* Depodan gelen dizilerle yedek nesnesi üretir. 'sonYedek' cihaza özgü olduğundan dışarı yazılmaz. */
+  /* 'sonYedek' cihaza özgü olduğundan, 'geminiApiKey' gizli/kişisel bir kimlik bilgisi olduğundan
+     yedek dosyasına yazılmaz (yedek başkasıyla paylaşılabilir; anahtar sızmasın diye). */
+  var DISARI_YAZILMAYAN_AYARLAR = ['sonYedek', 'geminiApiKey'];
+
+  /* Depodan gelen dizilerle yedek nesnesi üretir. */
   function paketle(parca, surum) {
     var v = {
       uygulama: UYGULAMA,
       schemaVersion: surum,
       disaAktarim: new Date().toISOString(),
-      settings: (parca.settings || []).filter(function (s) { return s.key !== 'sonYedek'; })
+      settings: (parca.settings || []).filter(function (s) { return DISARI_YAZILMAYAN_AYARLAR.indexOf(s.key) === -1; })
     };
     BOLUMLER.forEach(function (k) { if (k !== 'settings') v[k] = parca[k] || []; });
     return v;
