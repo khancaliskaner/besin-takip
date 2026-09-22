@@ -51,6 +51,21 @@
   }
 
   /* ---------- Besinlerim sayfası ---------- */
+  /* Kategorileri alfabetik yerine öğün akışına göre sırala: sık aranan gruplar (kahvaltılık,
+     ana yemek, fast-food...) önce gelsin, atıştırmalık/takviye gibi ikincil gruplar sonda kalsın. */
+  var KATEGORI_SIRA = [
+    'Kahvaltılık', 'Ana yemek', 'Çorba', 'Fast-food', 'Tahıl/ekmek', 'Sebze', 'Meyve',
+    'Et/tavuk/balık', 'Yumurta', 'Süt ürünleri', 'Baklagil', 'Kuruyemiş/tohum', 'Yağlar',
+    'Tatlı/şekerleme', 'İçecek', 'Paketli ürün', 'Takviye', 'Tarif', 'Kendi besinim'
+  ];
+  function kategorilerSirali() {
+    return Foods.kategoriler().slice().sort(function (a, b) {
+      var ia = KATEGORI_SIRA.indexOf(a), ib = KATEGORI_SIRA.indexOf(b);
+      if (ia === -1) ia = 999; if (ib === -1) ib = 999;
+      return ia - ib || a.localeCompare(b, 'tr');
+    });
+  }
+
   /* Kendi besin / tarif kaydedildikten sonra listeyi tazele ve bildir */
   function besinKaydedildi(kayit) {
     if (aktifSayfa === 'besinler') besinlerSayfasi();
@@ -122,6 +137,28 @@
   }
 
   var tbody, sayac;
+  function besinSatiri(f) {
+    var d = f.degerler;
+    return h('tr', { class: 'satir', tabindex: 0, onclick: function () { ayrintiAc(f); },
+        onkeydown: function (e) { if (e.key === 'Enter') ayrintiAc(f); } },
+      h('td', {}, favButonu(f)),
+      h('td', { class: 'ad' }, f.ad,
+        f.kendi ? h('span', { class: 'etiket kendi-etiket', text: 'kendi besinim' }) : null,
+        f.tarif ? h('span', { class: 'etiket kendi-etiket', text: f.bilesenSayisi + ' bileşenli tarif' }) : null),
+      h('td', {}, h('span', { class: 'etiket', text: f.kategori })),
+      h('td', { class: 'sayi', text: Calc.fmt(d.kcal, 'kcal') }),
+      h('td', { class: 'sayi', text: Calc.fmt(d.protein, 'g') }),
+      h('td', { class: 'sayi', text: Calc.fmt(d.karb, 'g') }),
+      h('td', { class: 'sayi', text: Calc.fmt(d.yag, 'g') }),
+      h('td', {}, (f.kendi || f.tarif)
+        ? h('span', { class: 'satir-dugme' },
+            h('button', { type: 'button', class: 'ikincil kucuk', text: 'Düzenle', 'aria-label': 'Düzenle: ' + f.ad,
+              onclick: function (e) { e.stopPropagation(); kendiDuzenle(f); } }),
+            h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', 'aria-label': 'Sil: ' + f.ad,
+              onclick: function (e) { e.stopPropagation(); kendiSil(f); } }))
+        : null));
+  }
+
   function listeyiYenile() {
     var list = gorunenBesinler();
     tbody.textContent = '';
@@ -130,29 +167,22 @@
         : state.gorunum === 'son' ? 'Henüz son kullanılan besin yok.' : 'Aramanıza uyan besin bulunamadı.';
       tbody.appendChild(h('tr', {}, h('td', { colspan: 8, class: 'bos', text: msg })));
     }
-    list.forEach(function (f) {
-      var d = f.degerler;
-      tbody.appendChild(h('tr', { class: 'satir', tabindex: 0, onclick: function () { ayrintiAc(f); },
-          onkeydown: function (e) { if (e.key === 'Enter') ayrintiAc(f); } },
-        h('td', {}, favButonu(f)),
-        h('td', { class: 'ad' }, f.ad,
-          f.kendi ? h('span', { class: 'etiket kendi-etiket', text: 'kendi besinim' }) : null,
-          f.tarif ? h('span', { class: 'etiket kendi-etiket', text: f.bilesenSayisi + ' bileşenli tarif' }) : null),
-        h('td', {}, h('span', { class: 'etiket', text: f.kategori })),
-        h('td', { class: 'sayi', text: Calc.fmt(d.kcal, 'kcal') }),
-        h('td', { class: 'sayi', text: Calc.fmt(d.protein, 'g') }),
-        h('td', { class: 'sayi', text: Calc.fmt(d.karb, 'g') }),
-        h('td', { class: 'sayi', text: Calc.fmt(d.yag, 'g') })
-        ,
-        h('td', {}, (f.kendi || f.tarif)
-          ? h('span', { class: 'satir-dugme' },
-              h('button', { type: 'button', class: 'ikincil kucuk', text: 'Düzenle', 'aria-label': 'Düzenle: ' + f.ad,
-                onclick: function (e) { e.stopPropagation(); kendiDuzenle(f); } }),
-              h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', 'aria-label': 'Sil: ' + f.ad,
-                onclick: function (e) { e.stopPropagation(); kendiSil(f); } }))
-          : null)
-      ));
-    });
+    /* Filtresiz/aramasız genel görünüm 525 besini tek alfabetik yığın hâlinde vermez, karışık olur:
+       kategori başlıklarıyla grupla (kahvaltılık, ana yemek, fast-food… sırasıyla). Arama, kategori
+       filtresi veya favori/son kullanılan sekmeleri açıkken sıralama zaten anlamlı, gruplama gerekmez. */
+    var grupla = state.gorunum === 'tumu' && !state.q && !state.kategori;
+    if (grupla) {
+      var gruplar = {};
+      list.forEach(function (f) { (gruplar[f.kategori] = gruplar[f.kategori] || []).push(f); });
+      kategorilerSirali().forEach(function (kat) {
+        if (!gruplar[kat]) return;
+        tbody.appendChild(h('tr', { class: 'grup-baslik' },
+          h('td', { colspan: 8, text: kat + ' (' + gruplar[kat].length + ')' })));
+        gruplar[kat].forEach(function (f) { tbody.appendChild(besinSatiri(f)); });
+      });
+    } else {
+      list.forEach(function (f) { tbody.appendChild(besinSatiri(f)); });
+    }
     sayac.textContent = list.length + ' besin listeleniyor (toplam ' + Foods.ALL.length + '). Değerler 100 g başınadır.';
   }
 
@@ -161,7 +191,7 @@
       oninput: function (e) { state.q = e.target.value; listeyiYenile(); } });
     var kat = h('select', { 'aria-label': 'Kategori', onchange: function (e) { state.kategori = e.target.value; listeyiYenile(); } },
       h('option', { value: '', text: 'Tüm kategoriler' }));
-    Foods.kategoriler().forEach(function (k) {
+    kategorilerSirali().forEach(function (k) {
       var o = h('option', { value: k, text: k }); if (k === state.kategori) o.selected = true; kat.appendChild(o);
     });
     var sekmeler = h('div', { class: 'sekmeler', role: 'group', 'aria-label': 'Görünüm' });
@@ -447,7 +477,7 @@
   function besinSec(og) {
     var dlg = doc.getElementById('secici');
     dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
-    var q = '';
+    var q = '', kat = '';
 
     function baslik(metin) {
       return h('div', { class: 'd-ust' }, h('h2', { text: metin }),
@@ -456,17 +486,19 @@
 
     function adim1() {
       var liste = h('div', { class: 'tablo-kap' });
+      var not = h('p', { class: 'not' });
       function doldur() {
         var res;
-        if (q.trim()) res = Foods.search(q);
+        if (q.trim() || kat) res = Foods.search(q, kat ? { kategori: kat } : undefined);
         else {
           var gor = {}, ilk = [];
           state.recents.concat(Array.from(state.favs)).forEach(function (id) { if (Foods.BY_ID[id] && !gor[id]) { gor[id] = 1; ilk.push(Foods.BY_ID[id]); } });
           res = ilk.length ? ilk : Foods.search('');
         }
+        not.textContent = (q.trim() || kat) ? '' : 'Arama boşken son kullanılanlar ve favoriler gösterilir.';
         res = res.slice(0, 60);
         liste.textContent = '';
-        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Aramanıza uyan besin bulunamadı.' })); return; }
+        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Bu kategoride/aramada besin bulunamadı.' })); return; }
         var tb = h('tbody');
         res.forEach(function (f) {
           tb.appendChild(h('tr', { class: 'satir', tabindex: 0, onclick: function () { adim2(f); }, onkeydown: function (e) { if (e.key === 'Enter') adim2(f); } },
@@ -475,11 +507,16 @@
         });
         liste.appendChild(h('table', {}, tb));
       }
-      var arama = h('input', { type: 'search', placeholder: 'Besin ara…', 'aria-label': 'Besin ara', oninput: function (e) { q = e.target.value; doldur(); } });
+      var arama = h('input', { type: 'search', placeholder: 'Besin ara…', 'aria-label': 'Besin ara', value: q,
+        oninput: function (e) { q = e.target.value; doldur(); } });
+      var katSec = h('select', { 'aria-label': 'Kategori', onchange: function (e) { kat = e.target.value; doldur(); } },
+        h('option', { value: '', text: 'Tüm kategoriler' }));
+      kategorilerSirali().forEach(function (k) {
+        var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
+      });
       dlg.textContent = '';
       dlg.appendChild(baslik(OGUN_AD[og] + ' — besin ekle'));
-      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama),
-        h('p', { class: 'not', text: q.trim() ? '' : 'Arama boşken son kullanılanlar ve favoriler gösterilir.' }), liste));
+      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec), not, liste));
       doldur();
       arama.focus();
     }
@@ -1285,7 +1322,7 @@
      Tarif bileşeni seçerken kullanılır (tarif içinde tarif seçilemez: döngü olmasın). */
   function besinSecPenceresi(secildi, baslikMetni, iptal) {
     var dlg = doc.getElementById('secici');
-    var q = '';
+    var q = '', kat = '';
     function ust(metin) {
       return h('div', { class: 'd-ust' }, h('h2', { text: metin }),
         h('button', { type: 'button', class: 'ikincil', text: 'Kapat',
@@ -1294,9 +1331,9 @@
     function adim1() {
       var liste = h('div', { class: 'tablo-kap' });
       function doldur() {
-        var res = Foods.search(q).filter(function (f) { return !f.tarif; }).slice(0, 60);
+        var res = Foods.search(q, kat ? { kategori: kat } : undefined).filter(function (f) { return !f.tarif; }).slice(0, 60);
         liste.textContent = '';
-        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Besin bulunamadı.' })); return; }
+        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Bu kategoride/aramada besin bulunamadı.' })); return; }
         var tb = h('tbody');
         res.forEach(function (f) {
           tb.appendChild(h('tr', { class: 'satir', tabindex: 0,
@@ -1308,11 +1345,17 @@
         });
         liste.appendChild(h('table', {}, tb));
       }
-      var arama = h('input', { type: 'search', placeholder: 'Besin ara…', 'aria-label': 'Besin ara',
+      var arama = h('input', { type: 'search', placeholder: 'Besin ara…', 'aria-label': 'Besin ara', value: q,
         oninput: function (e) { q = e.target.value; doldur(); } });
+      var katSec = h('select', { 'aria-label': 'Kategori', onchange: function (e) { kat = e.target.value; doldur(); } },
+        h('option', { value: '', text: 'Tüm kategoriler' }));
+      kategorilerSirali().forEach(function (k) {
+        if (k === 'Tarif') return; /* tarif içinde tarif seçilemez */
+        var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
+      });
       dlg.textContent = '';
       dlg.appendChild(ust(baslikMetni));
-      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama), liste));
+      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec), liste));
       doldur();
       if (!dlg.open) dlg.showModal();
       arama.focus();
