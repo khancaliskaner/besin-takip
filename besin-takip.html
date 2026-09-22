@@ -4,7 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Besin Takip</title>
-<link rel="stylesheet" href="css/style.css?v=0.12.0">
+<meta name="description" content="Çevrimdışı, tek kişilik kalori ve besin takip uygulaması.">
+<meta name="theme-color" content="#0f766e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Besin Takip">
+<link rel="manifest" href="manifest.json?v=0.13.0">
+<link rel="icon" href="icons/icon-192.png?v=0.13.0">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=0.13.0">
+<link rel="stylesheet" href="css/style.css?v=0.13.0">
 </head>
 <body>
 <div class="app">
@@ -43,7 +52,7 @@
     </a>
     <div class="menu-alt">
       <button id="tema-btn" type="button" class="ikincil">Koyu tema</button>
-      <div class="surum">Sürüm 0.12.0</div>
+      <div class="surum">Sürüm 0.13.0</div>
     </div>
   </nav>
   <main tabindex="-1">
@@ -56,17 +65,26 @@
 <dialog id="secici" aria-label="Besin ekle"></dialog>
 <div id="yazdir-alani" aria-hidden="true"></div>
 
-<script src="lib/chart.umd.min.js?v=0.12.0"></script>
-<script src="js/nutrients.js?v=0.12.0"></script>
-<script src="js/calc.js?v=0.12.0"></script>
-<script src="js/storage.js?v=0.12.0"></script>
-<script src="js/foods-data.js?v=0.12.0"></script>
-<script src="js/foods.js?v=0.12.0"></script>
-<script src="js/exercises-data.js?v=0.12.0"></script>
-<script src="js/exercises.js?v=0.12.0"></script>
-<script src="js/rda.js?v=0.12.0"></script>
-<script src="js/backup.js?v=0.12.0"></script>
-<script src="js/charts.js?v=0.12.0"></script>
-<script src="js/ui.js?v=0.12.0"></script>
+<script src="lib/chart.umd.min.js?v=0.13.0"></script>
+<script src="js/nutrients.js?v=0.13.0"></script>
+<script src="js/calc.js?v=0.13.0"></script>
+<script src="js/storage.js?v=0.13.0"></script>
+<script src="js/foods-data.js?v=0.13.0"></script>
+<script src="js/foods.js?v=0.13.0"></script>
+<script src="js/exercises-data.js?v=0.13.0"></script>
+<script src="js/exercises.js?v=0.13.0"></script>
+<script src="js/rda.js?v=0.13.0"></script>
+<script src="js/backup.js?v=0.13.0"></script>
+<script src="js/charts.js?v=0.13.0"></script>
+<script src="js/ui.js?v=0.13.0"></script>
+<script>
+  /* PWA: yalnızca güvenli bağlam (https / localhost) destekliyorsa kaydet.
+     file:// veya düz http:// üzerinde sessizce atlanır (çevrimdışı çalışma yine sürer, yalnızca "ana ekrana ekle"/servis-çalışanı önbelleği devreye girmez). */
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('service-worker.js?v=0.13.0').catch(function () { /* sessizce yok say */ });
+    });
+  }
+</script>
 </body>
 </html>
