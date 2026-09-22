@@ -5,7 +5,7 @@
   var MAKS_BOYUT = 50 * 1024 * 1024;
   var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler',
                    'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar', 'gunTamamlamalar',
-                   'kiloKayitlari'];
+                   'kiloKayitlari', 'orucGecmisi'];
 
   function gecerliTarih(s) {
     if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -35,8 +35,9 @@
     /* v4 -> v5: su kayıtları, kendi hareketler, antrenman günlüğü, favori antrenmanlar eklendi. */
     /* v5 -> v6: gün tamamlama işaretleri eklendi. */
     /* v6 -> v7: kilo takibi eklendi. */
+    /* v7 -> v8: aralıklı oruç geçmişi eklendi (aktif oturum 'settings' içinde, ayrı göç gerekmez). */
     BOLUMLER.forEach(function (k) { if (k !== 'settings' && !Array.isArray(data[k])) data[k] = []; });
-    data.schemaVersion = Math.max(v, hedefSurum || 7);
+    data.schemaVersion = Math.max(v, hedefSurum || 8);
     return data;
   }
 
@@ -199,6 +200,19 @@
       kids[kk.id] = 1;
       if (typeof kk.kilo_kg !== 'number' || !isFinite(kk.kilo_kg) || kk.kilo_kg <= 0 || kk.kilo_kg > 500) return hata('Kilo kaydı ' + kk_n + ': geçersiz değer.');
     }
+    /* Oruç geçmişi: id benzersiz, başlangıç/bitiş geçerli zaman damgası, bitiş başlangıçtan sonra */
+    var oids = {};
+    function gecerliZaman(s) { return typeof s === 'string' && !isNaN(Date.parse(s)); }
+    for (i = 0; i < d.orucGecmisi.length; i++) {
+      var og = d.orucGecmisi[i], og_n = i + 1;
+      if (!og || typeof og.id !== 'string' || !og.id) return hata('Oruç kaydı ' + og_n + ': kimlik eksik.');
+      if (oids[og.id]) return hata('Oruç kaydı ' + og_n + ': aynı kimlik iki kez var.');
+      oids[og.id] = 1;
+      if (!gecerliZaman(og.baslangic) || !gecerliZaman(og.bitis)) return hata('Oruç kaydı ' + og_n + ': geçersiz zaman damgası.');
+      if (Date.parse(og.bitis) < Date.parse(og.baslangic)) return hata('Oruç kaydı ' + og_n + ': bitiş, başlangıçtan önce olamaz.');
+      if (typeof og.hedef_saat !== 'number' || !(og.hedef_saat > 0)) return hata('Oruç kaydı ' + og_n + ': geçersiz hedef süre.');
+      if (typeof og.sure_dk !== 'number' || og.sure_dk < 0) return hata('Oruç kaydı ' + og_n + ': geçersiz gerçekleşen süre.');
+    }
     return { ok: true, veri: d };
   }
 
@@ -238,5 +252,5 @@
     return onek + '-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + '.' + uzanti;
   }
 
-  root.Backup = { OGUNLER: OGUNLER, MAKS_BOYUT: MAKS_BOYUT, paketle: paketle, dogrula: dogrula, goc: goc, csv: csv, hucre: hucre, dosyaAdi: dosyaAdi, gecerliTarih: gecerliTarih };
+  root.Backup = { OGUNLER: OGUNLER, BOLUMLER: BOLUMLER, MAKS_BOYUT: MAKS_BOYUT, paketle: paketle, dogrula: dogrula, goc: goc, csv: csv, hucre: hucre, dosyaAdi: dosyaAdi, gecerliTarih: gecerliTarih };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -9,18 +9,20 @@
      Sürüm 6: gün tamamlama işaretleri ('gunTamamlamalar' — kayıt anahtarı tarihin kendisi, ayrı dizin gerekmez).
      Sürüm 7: kilo takibi ('kiloKayitlari' — kayıt anahtarı tarihin kendisi; günde bir ölçüm, tekrar
        kaydedilince üzerine yazılır).
+     Sürüm 8: aralıklı oruç geçmişi ('orucGecmisi'). Aktif oruç oturumu ayrı depo gerektirmez,
+       'settings' içinde 'orucAktif' anahtarıyla tutulur.
      Açılışta eksik depo VE eksik dizin tamamlanır; mevcut kayıtlara dokunulmaz. */
-  var SCHEMA_VERSION = 7;
+  var SCHEMA_VERSION = 8;
   var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id',
                  ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id',
                  suKayitlari: 'id', ozelHareketler: 'id', antrenmanGunlugu: 'id', favoriAntrenmanlar: 'id',
-                 gunTamamlamalar: 'id', kiloKayitlari: 'id' };
+                 gunTamamlamalar: 'id', kiloKayitlari: 'id', orucGecmisi: 'id' };
   var INDEXES = { log: { tarih: 'tarih' }, suKayitlari: { tarih: 'tarih' }, antrenmanGunlugu: { tarih: 'tarih' } };
 
   var db = null;
   var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {},
                  suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {}, gunTamamlamalar: {},
-                 kiloKayitlari: {} };
+                 kiloKayitlari: {}, orucGecmisi: {} };
   var kalici = false;
   var sonHata = null;
 
@@ -204,7 +206,24 @@
       return tx('kiloKayitlari', 'readonly', function (s) { return s.get(tarih); }).then(function (r) { return r || null; });
     },
     kiloKaydet: function (tarih, kiloKg) { return put('kiloKayitlari', { id: tarih, kilo_kg: kiloKg, zaman: new Date().toISOString() }); },
-    kiloSil: function (tarih) { return del('kiloKayitlari', tarih); }
+    kiloSil: function (tarih) { return del('kiloKayitlari', tarih); },
+
+    /* Haftalık rapor için: bir haftalık aralıktaki tüm su kayıtlarını okumak yerine tüm depoyu okuyup
+       arayüzde tarihe göre süzmek daha basit (log/tumLog ile aynı desen). */
+    tumSu: function () { return all('suKayitlari'); },
+
+    /* Aralıklı oruç: aktif oturum settings['orucAktif'] = {baslangic, hedef_saat} | null.
+       Geçmiş: {id, baslangic, bitis, hedef_saat, sure_dk}. */
+    orucAktifOku: function () { return this.getSetting('orucAktif', null); },
+    orucBaslat: function (hedefSaat) { return this.setSetting('orucAktif', { baslangic: new Date().toISOString(), hedef_saat: hedefSaat }); },
+    orucBitir: function (kayit) {
+      return del('settings', 'orucAktif').then(function () {
+        return put('orucGecmisi', kayit);
+      });
+    },
+    orucIptal: function () { return del('settings', 'orucAktif'); },
+    listOrucGecmisi: function () { return all('orucGecmisi'); },
+    orucGecmisSil: function (id) { return del('orucGecmisi', id); }
   };
 
   /* Tarih dizinli bir depodan tek günün kayıtlarını döndürür. Dizin beklenmedik şekilde

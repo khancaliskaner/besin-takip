@@ -97,7 +97,7 @@
   t('Göç: v1 yedeği (log yok) güncel sürüme yükseltilir', v1.ok && v1.veri.schemaVersion === S2 && Array.isArray(v1.veri.log) && v1.veri.log.length === 0);
   var v2 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 2, log: [{ id: 'z1', tarih: '2026-09-22', ogun: 'öğle', besin_id: 'h-bal', miktar_g: 20 }] }, S2);
   t('Göç: v2 yedeği kayıp olmadan güncel sürüme yükseltilir', v2.ok && v2.veri.schemaVersion === S2 && v2.veri.log.length === 1 && v2.veri.log[0].miktar_g === 20);
-  t('Şema sürümü 7 (su, kendi hareket, antrenman günlüğü, favori antrenman, gün tamamlama, kilo takibi depoları)', S2 === 7);
+  t('Şema sürümü 8 (su, kendi hareket, antrenman, favori antrenman, gün tamamlama, kilo, oruç geçmişi depoları)', S2 === 8);
 
   /* --- Yedekleme: su / hareket / antrenman / favori antrenman / gün tamamlama / kilo (şema 7) --- */
   var ornek5 = {
@@ -107,25 +107,29 @@
       setler: [{ tekrar: 10 }, { tekrar: 8, agirlik_kg: 60, dinlenme_sn: 90 }], saat: '18:00' }],
     favoriAntrenmanlar: [{ id: 'fa-1', ad: 'Bacak günü', hareketler: [{ hareket_id: 'e-squat-barbell', setler: [{ tekrar: 10 }] }] }],
     gunTamamlamalar: [{ id: '2026-09-22', tamamlandi: true, zaman: '2026-09-22T20:00:00.000Z' }],
-    kiloKayitlari: [{ id: '2026-09-22', kilo_kg: 78.4, zaman: '2026-09-22T08:00:00.000Z' }]
+    kiloKayitlari: [{ id: '2026-09-22', kilo_kg: 78.4, zaman: '2026-09-22T08:00:00.000Z' }],
+    orucGecmisi: [{ id: 'o1', baslangic: '2026-09-22T20:00:00.000Z', bitis: '2026-09-23T14:00:00.000Z', hedef_saat: 16, sure_dk: 1080 }]
   };
   var p5 = Backup.paketle(ornek5, S2);
-  t('Yedek: su/hareket/antrenman/favori antrenman/gün tamamlama/kilo pakete girer',
+  t('Yedek: su/hareket/antrenman/favori antrenman/gün tamamlama/kilo/oruç pakete girer',
     p5.suKayitlari.length === 1 && p5.ozelHareketler.length === 1 && p5.antrenmanGunlugu.length === 1 &&
-    p5.favoriAntrenmanlar.length === 1 && p5.gunTamamlamalar.length === 1 && p5.kiloKayitlari.length === 1);
+    p5.favoriAntrenmanlar.length === 1 && p5.gunTamamlamalar.length === 1 && p5.kiloKayitlari.length === 1 && p5.orucGecmisi.length === 1);
   var d5 = Backup.dogrula(JSON.parse(JSON.stringify(p5)), S2);
-  t('Yedek: şema 7 paketi doğrulanır', d5.ok && d5.veri.antrenmanGunlugu[0].setler.length === 2 &&
-    d5.veri.gunTamamlamalar[0].id === '2026-09-22' && d5.veri.kiloKayitlari[0].kilo_kg === 78.4);
+  t('Yedek: şema 8 paketi doğrulanır', d5.ok && d5.veri.antrenmanGunlugu[0].setler.length === 2 &&
+    d5.veri.gunTamamlamalar[0].id === '2026-09-22' && d5.veri.kiloKayitlari[0].kilo_kg === 78.4 && d5.veri.orucGecmisi[0].sure_dk === 1080);
   var v4 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 4, log: [] }, S2);
   t('Göç: v4 yedeği güncel sürüme yükseltilir, yeni bölümler boş dizi olur',
     v4.ok && v4.veri.schemaVersion === S2 && v4.veri.suKayitlari.length === 0 && v4.veri.antrenmanGunlugu.length === 0 &&
-    v4.veri.gunTamamlamalar.length === 0 && v4.veri.kiloKayitlari.length === 0);
+    v4.veri.gunTamamlamalar.length === 0 && v4.veri.kiloKayitlari.length === 0 && v4.veri.orucGecmisi.length === 0);
   var v5 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 5, log: [], suKayitlari: [] }, S2);
-  t('Göç: v5 yedeği güncel sürüme yükseltilir, gunTamamlamalar/kiloKayitlari boş dizi olur',
-    v5.ok && v5.veri.schemaVersion === S2 && v5.veri.gunTamamlamalar.length === 0 && v5.veri.kiloKayitlari.length === 0);
+  t('Göç: v5 yedeği güncel sürüme yükseltilir, gunTamamlamalar/kiloKayitlari/orucGecmisi boş dizi olur',
+    v5.ok && v5.veri.schemaVersion === S2 && v5.veri.gunTamamlamalar.length === 0 && v5.veri.kiloKayitlari.length === 0 && v5.veri.orucGecmisi.length === 0);
   var v6 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 6, log: [], gunTamamlamalar: [] }, S2);
-  t('Göç: v6 yedeği güncel sürüme yükseltilir, kiloKayitlari boş dizi olur',
-    v6.ok && v6.veri.schemaVersion === S2 && v6.veri.kiloKayitlari.length === 0);
+  t('Göç: v6 yedeği güncel sürüme yükseltilir, kiloKayitlari/orucGecmisi boş dizi olur',
+    v6.ok && v6.veri.schemaVersion === S2 && v6.veri.kiloKayitlari.length === 0 && v6.veri.orucGecmisi.length === 0);
+  var v7 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 7, log: [], kiloKayitlari: [] }, S2);
+  t('Göç: v7 yedeği güncel sürüme yükseltilir, orucGecmisi boş dizi olur',
+    v7.ok && v7.veri.schemaVersion === S2 && v7.veri.orucGecmisi.length === 0);
 
   function boz5(bolum, degis) { var c = JSON.parse(JSON.stringify(p5)); degis(c[bolum][0]); return Backup.dogrula(c, S2).ok; }
   t('Bozuk: su kaydında geçersiz tarih', !boz5('suKayitlari', function (s) { s.tarih = '2026-13-01'; }));
@@ -149,6 +153,15 @@
   t('Bozuk: kilo kaydında yinelenen tarih', (function () {
     var c = JSON.parse(JSON.stringify(p5));
     c.kiloKayitlari.push({ id: '2026-09-22', kilo_kg: 80 });
+    return !Backup.dogrula(c, S2).ok;
+  })());
+  t('Bozuk: oruç kaydında geçersiz zaman damgası', !boz5('orucGecmisi', function (o) { o.baslangic = 'gecersiz'; }));
+  t('Bozuk: oruç kaydında bitiş başlangıçtan önce', !boz5('orucGecmisi', function (o) { o.bitis = '2020-01-01T00:00:00.000Z'; }));
+  t('Bozuk: oruç kaydında hedef süre sıfır', !boz5('orucGecmisi', function (o) { o.hedef_saat = 0; }));
+  t('Bozuk: oruç kaydında negatif gerçekleşen süre', !boz5('orucGecmisi', function (o) { o.sure_dk = -10; }));
+  t('Bozuk: oruç kaydında yinelenen kimlik', (function () {
+    var c = JSON.parse(JSON.stringify(p5));
+    c.orucGecmisi.push({ id: 'o1', baslangic: '2026-09-22T20:00:00.000Z', bitis: '2026-09-23T14:00:00.000Z', hedef_saat: 16, sure_dk: 1080 });
     return !Backup.dogrula(c, S2).ok;
   })());
 

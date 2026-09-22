@@ -286,3 +286,21 @@ details.deger-grup summary { cursor: pointer; font-weight: 600; font-size: 14px;
 .tamamla-buton.tamamlandi { background: color-mix(in srgb, var(--durum-iyi) 16%, var(--panel)); color: var(--durum-iyi); border: 1px solid color-mix(in srgb, var(--durum-iyi) 42%, transparent); box-shadow: none; font-weight: 600; }
 .tamamla-buton.tamamlandi:hover { background: color-mix(in srgb, var(--durum-iyi) 24%, var(--panel)); transform: none; }
 @media (max-width: 500px) { .gun-cizelge-satir { flex-direction: column; align-items: stretch; } .tamamla-buton { width: 100%; } }
+
+/* Haftalık rapor: yazdırma / "PDF olarak kaydet". Ekranda hep gizli; yazdırma diyaloğu
+   açılmadan hemen önce içeriği doldurulup görünür kılınır. */
+#yazdir-alani { display: none; }
+#yazdir-alani h1 { font-size: 20px; margin: 0 0 4px; }
+#yazdir-alani .rapor-alt { color: #555; margin: 0 0 18px; font-size: 13px; }
+#yazdir-alani table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13px; }
+#yazdir-alani th, #yazdir-alani td { border: 1px solid #bbb; padding: 6px 10px; text-align: left; }
+#yazdir-alani th { background: #f0f0f0; font-weight: 600; }
+#yazdir-alani td.sayi, #yazdir-alani th.sayi { text-align: right; }
+#yazdir-alani .rapor-ozet { display: flex; gap: 24px; margin: 0 0 16px; flex-wrap: wrap; }
+#yazdir-alani .rapor-ozet div b { display: block; font-size: 18px; }
+#yazdir-alani .rapor-ozet div span { color: #555; font-size: 12px; }
+@media print {
+  body * { visibility: hidden; }
+  #yazdir-alani, #yazdir-alani * { visibility: visible; }
+  #yazdir-alani { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 16px; color: #000; background: #fff; }
+}

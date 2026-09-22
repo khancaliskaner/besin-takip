@@ -226,10 +226,104 @@
     }
     content.appendChild(h('div', { class: 'araclar' }, arama, kat, sekmeler,
       h('button', { type: 'button', text: '+ Kendi besinim', onclick: function () { kendiBesinAc(null, besinKaydedildi); } }),
-      h('button', { type: 'button', class: 'ikincil', text: '+ Tarif oluştur', onclick: function () { tarifAc(null, besinKaydedildi); } })));
+      h('button', { type: 'button', class: 'ikincil', text: '+ Tarif oluştur', onclick: function () { tarifAc(null, besinKaydedildi); } }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Besin karşılaştır', onclick: besinKarsilastirmaPenceresi })));
     content.appendChild(h('div', { class: 'tablo-kap' }, tablo));
     content.appendChild(sayac);
     listeyiYenile();
+  }
+
+
+  /* ---------- Besin karşılaştırma ----------
+     2-4 besini yan yana koyup 100 g başına tüm değerlerini (41 alan) karşılaştırır.
+     Program sağlık/diyet önerisi vermediği için "daha iyi/kötü" gibi bir yorum eklenmez;
+     yalnızca değerler yan yana gösterilir, kullanıcı kendi karşılaştırmasını yapar. */
+  function besinKarsilastirmaPenceresi() {
+    var dlg = doc.getElementById('secici');
+    dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
+    var secililer = [];
+    var q = '', kat = '';
+
+    function ust() {
+      return h('div', { class: 'd-ust' }, h('h2', { text: 'Besin karşılaştır' }),
+        h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } }));
+    }
+
+    function ciz() {
+      var cipler = h('div', { class: 'su-liste' });
+      secililer.forEach(function (f, i) {
+        cipler.appendChild(h('span', { class: 'su-cip' }, f.ad,
+          h('button', { type: 'button', class: 'su-cip-sil', 'aria-label': 'Karşılaştırmadan çıkar: ' + f.ad,
+            onclick: function () { secililer.splice(i, 1); ciz(); } })));
+      });
+
+      var liste = h('div', { class: 'tablo-kap' });
+      function doldur() {
+        var doluMu = secililer.length >= 4;
+        var res = Foods.search(q, kat ? { kategori: kat } : undefined)
+          .filter(function (f) { return !secililer.some(function (s) { return s.id === f.id; }); }).slice(0, 60);
+        liste.textContent = '';
+        if (doluMu) { liste.appendChild(h('p', { class: 'bos', text: 'En fazla 4 besin karşılaştırılabilir. Eklemek için önce birini çıkarın.' })); return; }
+        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Bu kategoride/aramada besin bulunamadı.' })); return; }
+        var tb = h('tbody');
+        res.forEach(function (f) {
+          tb.appendChild(h('tr', { class: 'satir', tabindex: 0,
+            onclick: function () { secililer.push(f); ciz(); },
+            onkeydown: function (ev) { if (ev.key === 'Enter') { secililer.push(f); ciz(); } } },
+            h('td', { class: 'ad', text: f.ad }), h('td', {}, h('span', { class: 'etiket', text: f.kategori })),
+            h('td', { class: 'sayi', text: Calc.fmt(f.degerler.kcal, 'kcal') + ' kcal/100 g' })));
+        });
+        liste.appendChild(h('table', {}, tb));
+      }
+      var arama = h('input', { type: 'search', placeholder: 'Besin ara…', 'aria-label': 'Besin ara', value: q,
+        oninput: function (e) { q = e.target.value; doldur(); } });
+      var katSec = h('select', { 'aria-label': 'Kategori', onchange: function (e) { kat = e.target.value; doldur(); } },
+        h('option', { value: '', text: 'Tüm kategoriler' }));
+      kategorilerSirali().forEach(function (k) {
+        var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
+      });
+
+      dlg.textContent = '';
+      dlg.appendChild(ust());
+      dlg.appendChild(h('div', { class: 'd-govde' },
+        h('p', { class: 'aciklama', text: 'Karşılaştırmak istediğiniz 2-4 besini seçin (100 g başına).' }),
+        secililer.length ? cipler : null,
+        h('div', { class: 'araclar' }, arama, katSec),
+        liste,
+        h('div', { class: 'araclar' },
+          h('button', { type: 'button', text: 'Karşılaştır (' + secililer.length + ')', disabled: secililer.length < 2,
+            onclick: function () { dlg.close(); karsilastirmaSayfasi(secililer.slice()); } }))));
+      doldur();
+    }
+    ciz();
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function karsilastirmaSayfasi(besinler) {
+    content.textContent = '';
+    content.appendChild(h('h1', { text: 'Besin karşılaştırma' }));
+    content.appendChild(h('p', { class: 'alt-baslik', text: besinler.length + ' besin, 100 g başına. "—" değeri bilinmiyor demektir (0 anlamına gelmez).' }));
+    content.appendChild(h('div', { class: 'araclar' },
+      h('button', { type: 'button', class: 'ikincil', text: '‹ Besinlerime dön', onclick: besinlerSayfasi })));
+
+    var thead = h('tr', {}, h('th', { text: 'Değer' }));
+    besinler.forEach(function (f) { thead.appendChild(h('th', { class: 'sayi', text: f.ad })); });
+    var tb = h('tbody');
+    Nutrients.GROUPS.forEach(function (grup) {
+      tb.appendChild(h('tr', { class: 'grup-baslik' }, h('td', { colspan: besinler.length + 1, text: grup })));
+      Nutrients.LIST.filter(function (n) { return n.g === grup; }).forEach(function (n) {
+        var tr = h('tr', {}, h('td', { text: n.ad }));
+        besinler.forEach(function (f) {
+          var v = f.degerler[n.k];
+          tr.appendChild(h('td', { class: 'sayi', text: Calc.fmt(v, n.b) + (v == null || !n.b ? '' : ' ' + n.b) }));
+        });
+        tb.appendChild(tr);
+      });
+    });
+    content.appendChild(h('div', { class: 'tablo-kap' }, h('table', {}, h('thead', {}, thead), tb)));
+    if (besinler.some(function (f) { return !f.dogrulandi; })) {
+      content.appendChild(h('p', { class: 'not', text: 'Listedeki bazı besinlerin değerleri yaklaşıktır ve henüz doğrulanmamıştır.' }));
+    }
   }
 
   /* ---------- Besin ayrıntısı (seçilen miktar için tam değer tablosu) ---------- */
@@ -322,6 +416,7 @@
   var VARSAYILAN_HEDEF = { kcal: 2000, protein: 100, karb: 250, yag: 70, lif: 30, su_ml: 2000 };
   var HEDEF_AD = [['kcal', 'Kalori', 'kcal'], ['protein', 'Protein', 'g'], ['karb', 'Karbonhidrat', 'g'], ['yag', 'Yağ', 'g'], ['lif', 'Lif', 'g']];
   var gun = { tarih: null, sira: 0 };
+  var orucZamanlayiciId = null; /* Bugün sayfasındaki oruç sayacının setInterval kimliği */
   var aktifSayfa = '';
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -347,8 +442,8 @@
     if (!gun.tarih) gun.tarih = yerelTarih(new Date());
     var sira = ++gun.sira;
     Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF),
-      Storage.listSuByDate(gun.tarih), Storage.listTamamlananGunler(), Storage.kiloOku(gun.tarih)]).then(function (r) {
-      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2], r[3], r[4]);
+      Storage.listSuByDate(gun.tarih), Storage.listTamamlananGunler(), Storage.kiloOku(gun.tarih), Storage.orucAktifOku()]).then(function (r) {
+      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2], r[3], r[4], r[5]);
     }).catch(function (e) { if (aktifSayfa === 'bugun') hataGoster(e); });
   }
   function yenile() { bugunSayfasi(); }
@@ -394,6 +489,72 @@
         (tamamlandi ? Storage.gunTamamlaKaldir(gun.tarih) : Storage.gunTamamlaIsaretle(gun.tarih)).then(yenile);
       }
     }, tamamlandi ? '✓ Gün tamamlandı' : 'Günü tamamlandı işaretle');
+  }
+
+  /* ---------- Haftalık rapor (yazdır / "PDF olarak kaydet") ----------
+     Seçili günü içeren Pazartesi-Pazar haftası. window.print() tarayıcının kendi
+     yazdırma diyaloğunu açar; kullanıcı orada "PDF olarak kaydet"i seçebilir —
+     ayrı bir PDF kütüphanesi gerekmez, çevrimdışı çalışma kuralı bozulmaz. */
+  function haftalikRaporYazdir() {
+    var baslangic = haftaBaslangici(gun.tarih);
+    var gunler = [];
+    for (var i = 0; i < 7; i++) gunler.push(tarihKaydir(baslangic, i));
+    var bitis = gunler[6];
+
+    Promise.all([Storage.tumLog(), Storage.tumSu(), Storage.listKilo(), Storage.listTamamlananGunler()]).then(function (r) {
+      var log = r[0].filter(function (k) { return k.tarih >= baslangic && k.tarih <= bitis; });
+      var su = r[1].filter(function (k) { return k.tarih >= baslangic && k.tarih <= bitis; });
+      var kiloMap = {}; r[2].forEach(function (k) { kiloMap[k.id] = k.kilo_kg; });
+      var tamamlananSet = new Set(r[3].map(function (x) { return x.id; }));
+
+      var satirlar = [], toplamKcalSayaci = [], toplamProteinSayaci = [];
+      gunler.forEach(function (t) {
+        var gunKayit = log.filter(function (k) { return k.tarih === t; });
+        var hs = hesapla(gunKayit);
+        var suMl = su.filter(function (k) { return k.tarih === t; }).reduce(function (a, k) { return a + k.ml; }, 0);
+        if (gunKayit.length) { toplamKcalSayaci.push(hs.toplam.kcal); toplamProteinSayaci.push(hs.toplam.protein); }
+        satirlar.push({
+          tarih: t, kayitVar: gunKayit.length > 0,
+          kcal: gunKayit.length ? hs.toplam.kcal : null, protein: gunKayit.length ? hs.toplam.protein : null,
+          karb: gunKayit.length ? hs.toplam.karb : null, yag: gunKayit.length ? hs.toplam.yag : null,
+          su: suMl, kilo: kiloMap[t] != null ? kiloMap[t] : null, tamamlandi: tamamlananSet.has(t)
+        });
+      });
+
+      var ort = function (dizi) { return dizi.length ? dizi.reduce(function (a, b) { return a + b; }, 0) / dizi.length : null; };
+      var ortKcal = ort(toplamKcalSayaci), ortProtein = ort(toplamProteinSayaci);
+
+      var alan = doc.getElementById('yazdir-alani');
+      alan.textContent = '';
+      alan.appendChild(h('h1', { text: 'Haftalık rapor' }));
+      alan.appendChild(h('p', { class: 'rapor-alt', text: tarihMetni(baslangic) + ' – ' + tarihMetni(bitis) +
+        ' · oluşturulma: ' + new Date().toLocaleString('tr-TR') }));
+      alan.appendChild(h('div', { class: 'rapor-ozet' },
+        h('div', {}, h('b', { text: ortKcal != null ? Calc.fmt(ortKcal, 'kcal') + ' kcal' : '—' }), h('span', { text: 'Günlük ortalama kalori' })),
+        h('div', {}, h('b', { text: ortProtein != null ? Calc.fmt(ortProtein, 'g') + ' g' : '—' }), h('span', { text: 'Günlük ortalama protein' })),
+        h('div', {}, h('b', { text: String(toplamKcalSayaci.length) + ' / 7' }), h('span', { text: 'Kayıt girilen gün' })),
+        h('div', {}, h('b', { text: String(satirlar.filter(function (s) { return s.tamamlandi; }).length) + ' / 7' }), h('span', { text: 'Tamamlandı işaretli gün' }))));
+
+      var tb = h('tbody');
+      satirlar.forEach(function (s) {
+        tb.appendChild(h('tr', {},
+          h('td', { text: tarihMetni(s.tarih) + (s.tamamlandi ? ' ✓' : '') }),
+          h('td', { class: 'sayi', text: s.kcal != null ? Calc.fmt(s.kcal, 'kcal') : '—' }),
+          h('td', { class: 'sayi', text: s.protein != null ? Calc.fmt(s.protein, 'g') : '—' }),
+          h('td', { class: 'sayi', text: s.karb != null ? Calc.fmt(s.karb, 'g') : '—' }),
+          h('td', { class: 'sayi', text: s.yag != null ? Calc.fmt(s.yag, 'g') : '—' }),
+          h('td', { class: 'sayi', text: s.su > 0 ? Calc.fmt(s.su, 'ml') : '—' }),
+          h('td', { class: 'sayi', text: s.kilo != null ? Calc.fmt(s.kilo, 'kg') : '—' })));
+      });
+      alan.appendChild(h('table', {},
+        h('thead', {}, h('tr', {}, h('th', { text: 'Gün' }), h('th', { class: 'sayi', text: 'kcal' }),
+          h('th', { class: 'sayi', text: 'Protein (g)' }), h('th', { class: 'sayi', text: 'Karb. (g)' }),
+          h('th', { class: 'sayi', text: 'Yağ (g)' }), h('th', { class: 'sayi', text: 'Su (ml)' }), h('th', { class: 'sayi', text: 'Kilo (kg)' }))),
+        tb));
+      alan.appendChild(h('p', { style: 'font-size:11px;color:#777', text: '"—" değeri bilinmiyor/kayıt yok demektir. Besin Takip — kişisel kayıt aracı; sağlık/diyet önerisi içermez.' }));
+
+      root.setTimeout(function () { root.print(); }, 50); /* içerik DOM'a yerleşsin diye kısa gecikme */
+    }).catch(function (e) { uyar('Rapor oluşturulamadı: ' + ((e && e.message) || e)); });
   }
 
   function ilerlemeCubugu(ad, deger, hedef, birim, eksikSayisi) {
@@ -466,7 +627,68 @@
     return panel;
   }
 
-  function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe, kiloBugun) {
+  /* ---------- Aralıklı oruç zamanlayıcı ----------
+     "Şimdi"ye bağlı, seçili güne değil: yalnızca Bugün sayfasında ve bugün seçiliyken gösterilir.
+     Aktif oturum settings['orucAktif'] içinde tutulur (tarihe bağlı bir depo değil). */
+  var ORUC_HIZLI = [16, 18, 20, 23];
+  function orucSuresiMetni(dk) { return Math.floor(dk / 60) + ' sa ' + pad(Math.abs(dk) % 60) + ' dk'; }
+  function orucPaneli(aktif) {
+    if (orucZamanlayiciId) { root.clearInterval(orucZamanlayiciId); orucZamanlayiciId = null; }
+    var panel = h('section', { class: 'panel', 'aria-label': 'Aralıklı oruç' }, h('h2', { text: 'Oruç' }));
+
+    if (!aktif) {
+      var ozelSaat = h('input', { type: 'number', min: 1, max: 48, step: 1, placeholder: 'saat', class: 'su-ozel-ml', 'aria-label': 'Özel hedef süre (saat)' });
+      var dugmeler = h('div', { class: 'araclar' });
+      ORUC_HIZLI.forEach(function (s) {
+        dugmeler.appendChild(h('button', { type: 'button', class: 'ikincil', text: s + ':' + (24 - s),
+          onclick: function () { Storage.orucBaslat(s).then(yenile); } }));
+      });
+      dugmeler.appendChild(ozelSaat);
+      dugmeler.appendChild(h('button', { type: 'button', class: 'ikincil', text: 'Başlat',
+        onclick: function () {
+          var v = sayi(ozelSaat.value);
+          if (!(v > 0)) { uyar('Hedef süre sıfırdan büyük olmalı.'); return; }
+          Storage.orucBaslat(v).then(yenile);
+        } }));
+      panel.appendChild(dugmeler);
+      panel.appendChild(h('p', { class: 'not', text: '16:8, 18:6, 20:4 gibi yaygın düzenler veya kendi hedef sürenizi (saat) girin.' }));
+      return panel;
+    }
+
+    var durumEl = h('div', {});
+    function guncelle() {
+      var gecenDk = Math.floor((Date.now() - new Date(aktif.baslangic).getTime()) / 60000);
+      var hedefDk = aktif.hedef_saat * 60;
+      var kalanDk = hedefDk - gecenDk;
+      var yuzde = hedefDk > 0 ? gecenDk / hedefDk * 100 : 0;
+      durumEl.textContent = '';
+      durumEl.appendChild(h('p', { class: 'one-cikan-alt', text: 'Başlangıç: ' +
+        new Date(aktif.baslangic).toLocaleString('tr-TR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }));
+      durumEl.appendChild(h('p', { class: 'one-cikan', text: orucSuresiMetni(gecenDk) }));
+      durumEl.appendChild(h('p', { class: 'aciklama', text: kalanDk <= 0
+        ? 'Hedef süre (' + aktif.hedef_saat + ' sa) tamamlandı.'
+        : orucSuresiMetni(kalanDk) + ' kaldı (hedef ' + aktif.hedef_saat + ' sa).' }));
+      durumEl.appendChild(h('div', { class: 'cubuk' + (yuzde > 100 ? ' asti' : ''), role: 'progressbar',
+        'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.min(100, Math.round(yuzde)), 'aria-label': 'Oruç ilerlemesi' },
+        h('div', { class: 'dolgu', style: 'width:' + Math.min(100, yuzde) + '%' })));
+    }
+    guncelle();
+    orucZamanlayiciId = root.setInterval(guncelle, 30000); /* saniye hassasiyeti gerekmez, 30 sn'de bir yeter */
+    panel.appendChild(durumEl);
+    panel.appendChild(h('div', { class: 'araclar' },
+      h('button', { type: 'button', text: 'Orucu bitir', onclick: function () {
+        var bitisIso = new Date().toISOString();
+        var sureDk = Math.round((new Date(bitisIso).getTime() - new Date(aktif.baslangic).getTime()) / 60000);
+        Storage.orucBitir({ id: yeniId(), baslangic: aktif.baslangic, bitis: bitisIso, hedef_saat: aktif.hedef_saat, sure_dk: sureDk }).then(yenile);
+      } }),
+      h('button', { type: 'button', class: 'ikincil', text: 'İptal et (kaydetmeden)', onclick: function () {
+        if (!root.confirm('Bu oruç oturumu geçmişe kaydedilmeden iptal edilsin mi?')) return;
+        Storage.orucIptal().then(yenile);
+      } })));
+    return panel;
+  }
+
+  function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe, kiloBugun, orucAktif) {
     var bugun = yerelTarih(new Date());
     var hs = hesapla(kayitlar);
     var tamamlananSet = new Set(tamamlananListe.map(function (x) { return x.id; }));
@@ -484,10 +706,12 @@
       h('button', { type: 'button', class: 'ikincil', 'aria-label': 'Sonraki gün', text: 'Sonraki ›', onclick: function () { gun.tarih = tarihKaydir(gun.tarih, 1); yenile(); } }),
       gun.tarih === bugun ? null : h('button', { type: 'button', text: 'Bugüne dön', onclick: function () { gun.tarih = bugun; yenile(); } })));
 
-    /* Gün çizelgesi: haftalık şerit + tamamlama işareti */
+    /* Gün çizelgesi: haftalık şerit + tamamlama işareti + haftalık rapor */
     sayfa.appendChild(h('div', { class: 'gun-cizelge-satir' },
       gunCizelgesi(tamamlananSet),
-      tamamlamaDugmesi(tamamlananSet.has(gun.tarih))));
+      h('span', { class: 'satir-dugme' },
+        h('button', { type: 'button', class: 'ikincil', text: 'Haftalık raporu yazdır', onclick: haftalikRaporYazdir }),
+        tamamlamaDugmesi(tamamlananSet.has(gun.tarih)))));
 
     /* Günlük özet */
     var ozet = h('section', { class: 'panel', 'aria-label': 'Günlük özet' }, h('h2', { text: 'Günlük özet' }));
@@ -504,6 +728,10 @@
 
     /* Kilo */
     sayfa.appendChild(kiloPaneli(kiloBugun, hedefler));
+
+    /* Oruç: "şimdi"ye bağlı olduğu için yalnızca bugün seçiliyken gösterilir */
+    if (gun.tarih === bugun) sayfa.appendChild(orucPaneli(orucAktif));
+    else if (orucZamanlayiciId) { root.clearInterval(orucZamanlayiciId); orucZamanlayiciId = null; }
 
     /* Öğünler */
     OGUNLER.forEach(function (og) {
@@ -784,10 +1012,9 @@
         .then(function () { return Promise.all([Storage.listFavorites(), Storage.listRecents(), Storage.getSetting('tema', 'acik'), besinListesiniTazele(), hareketListesiniTazele()]); })
         .then(function (r) {
           state.favs = new Set(r[0]); state.recents = r[1]; temaUygula(r[2]);
-          sonuc('İçe aktarma tamam: ' + d.veri.log.length + ' öğün kaydı, ' + d.veri.ozelBesinler.length +
-            ' kendi besin, ' + d.veri.tarifler.length + ' tarif, ' + d.veri.antrenmanGunlugu.length +
-            ' antrenman kaydı, ' + d.veri.suKayitlari.length + ' su kaydı, ' + d.veri.kiloKayitlari.length +
-            ' kilo kaydı geri yüklendi.', false);
+          var toplamKayit = Backup.BOLUMLER.filter(function (k) { return k !== 'settings'; })
+            .reduce(function (a, k) { return a + d.veri[k].length; }, 0);
+          sonuc('İçe aktarma tamam: ' + d.veri.log.length + ' öğün kaydı dahil, toplam ' + toplamKayit + ' kayıt geri yüklendi.', false);
           hatirlatmaKontrol();
         })
         .catch(function () { sonuc('İçe aktarma sırasında hata oluştu; mevcut veriler değişmedi.', true); });
@@ -2068,6 +2295,7 @@
     var r = (root.location.hash || '').replace('#', '');
     if (!SAYFALAR[r]) r = 'bugun';
     if (aktifSayfa === 'grafikler' && r !== 'grafikler' && Charts) Charts.hepsiniYokEt(); /* tuval belleğini bırak */
+    if (aktifSayfa === 'bugun' && r !== 'bugun' && orucZamanlayiciId) { root.clearInterval(orucZamanlayiciId); orucZamanlayiciId = null; } /* oruç sayacını durdur */
     aktifSayfa = r;
     hatirlatmaKontrol();
     Array.prototype.forEach.call(doc.querySelectorAll('.menu a'), function (a) {
