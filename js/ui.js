@@ -347,8 +347,8 @@
     if (!gun.tarih) gun.tarih = yerelTarih(new Date());
     var sira = ++gun.sira;
     Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF),
-      Storage.listSuByDate(gun.tarih), Storage.listTamamlananGunler()]).then(function (r) {
-      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2], r[3]);
+      Storage.listSuByDate(gun.tarih), Storage.listTamamlananGunler(), Storage.kiloOku(gun.tarih)]).then(function (r) {
+      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2], r[3], r[4]);
     }).catch(function (e) { if (aktifSayfa === 'bugun') hataGoster(e); });
   }
   function yenile() { bugunSayfasi(); }
@@ -440,7 +440,33 @@
     return panel;
   }
 
-  function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe) {
+  /* Günde bir ölçüm; aynı günü tekrar kaydetmek üzerine yazar (yeni depo kaydı açmaz). */
+  function kiloPaneli(kiloBugun, hedefler) {
+    var girdi = h('input', { type: 'number', min: 0, step: 'any', placeholder: 'kg', class: 'su-ozel-ml',
+      value: kiloBugun ? String(kiloBugun.kilo_kg) : '', 'aria-label': 'Bugünkü kilo (kg)' });
+    function kaydet() {
+      var v = sayi(girdi.value);
+      if (!(v > 0)) { uyar('Kilo sıfırdan büyük olmalı.'); return; }
+      Storage.kiloKaydet(gun.tarih, v).then(yenile);
+    }
+    var panel = h('section', { class: 'panel' }, h('h2', { text: 'Kilo' }),
+      h('div', { class: 'araclar' },
+        girdi, h('span', { class: 'not', text: 'kg' }),
+        h('button', { type: 'button', class: 'ikincil', text: kiloBugun ? 'Güncelle' : 'Kaydet', onclick: kaydet }),
+        kiloBugun ? h('button', { type: 'button', class: 'ikincil', text: 'Sil',
+          onclick: function () { Storage.kiloSil(gun.tarih).then(yenile); } }) : null));
+    var hedefKilo = hedefler.hedef_kilo_kg;
+    if (kiloBugun && hedefKilo > 0) {
+      var fark = Math.round((kiloBugun.kilo_kg - hedefKilo) * 10) / 10;
+      var metin = Math.abs(fark) < 0.05 ? 'Hedef kiloya ulaştın (' + Calc.fmt(hedefKilo, 'kg') + ' kg).'
+        : (fark > 0 ? Calc.fmt(fark, 'kg') : Calc.fmt(-fark, 'kg')) + ' kg, hedefin ' + (fark > 0 ? 'üzerinde' : 'altında') +
+          ' (hedef ' + Calc.fmt(hedefKilo, 'kg') + ' kg).';
+      panel.appendChild(h('p', { class: 'not', text: metin }));
+    }
+    return panel;
+  }
+
+  function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe, kiloBugun) {
     var bugun = yerelTarih(new Date());
     var hs = hesapla(kayitlar);
     var tamamlananSet = new Set(tamamlananListe.map(function (x) { return x.id; }));
@@ -475,6 +501,9 @@
     /* Su */
     var suHedef = hedefler.su_ml != null ? hedefler.su_ml : VARSAYILAN_HEDEF.su_ml;
     sayfa.appendChild(suPaneli(suKayitlari, suHedef));
+
+    /* Kilo */
+    sayfa.appendChild(kiloPaneli(kiloBugun, hedefler));
 
     /* Öğünler */
     OGUNLER.forEach(function (og) {
@@ -757,7 +786,8 @@
           state.favs = new Set(r[0]); state.recents = r[1]; temaUygula(r[2]);
           sonuc('İçe aktarma tamam: ' + d.veri.log.length + ' öğün kaydı, ' + d.veri.ozelBesinler.length +
             ' kendi besin, ' + d.veri.tarifler.length + ' tarif, ' + d.veri.antrenmanGunlugu.length +
-            ' antrenman kaydı, ' + d.veri.suKayitlari.length + ' su kaydı geri yüklendi.', false);
+            ' antrenman kaydı, ' + d.veri.suKayitlari.length + ' su kaydı, ' + d.veri.kiloKayitlari.length +
+            ' kilo kaydı geri yüklendi.', false);
           hatirlatmaKontrol();
         })
         .catch(function () { sonuc('İçe aktarma sırasında hata oluştu; mevcut veriler değişmedi.', true); });
@@ -873,13 +903,13 @@
     Charts.hepsiniYokEt();
     if (!gun.tarih) gun.tarih = yerelTarih(new Date());
     var sira = ++gun.sira;
-    Promise.all([Storage.tumLog(), Storage.getSetting('hedefler', VARSAYILAN_HEDEF)]).then(function (r) {
+    Promise.all([Storage.tumLog(), Storage.getSetting('hedefler', VARSAYILAN_HEDEF), Storage.listKilo()]).then(function (r) {
       if (sira !== gun.sira || aktifSayfa !== 'grafikler') return;
-      grafikCiz(r[0], r[1]);
+      grafikCiz(r[0], r[1], r[2]);
     }).catch(function (e) { if (aktifSayfa === 'grafikler') hataGoster(e); });
   }
 
-  function grafikCiz(hepsi, hedefler) {
+  function grafikCiz(hepsi, hedefler, kiloKayitlari) {
     content.textContent = '';
     content.appendChild(h('h1', { text: 'Grafikler' }));
     content.appendChild(h('p', { class: 'alt-baslik', text: 'Kayıtlarınızın görsel özeti. Her grafiğin altında aynı verinin tablo hâli vardır.' }));
@@ -895,7 +925,7 @@
       content.appendChild(h('p', { class: 'bos', text: 'Grafik kütüphanesi (lib/chart.umd.min.js) yüklenemedi. Tablo görünümleri yine de çalışır.' }));
     }
     if (grafikDurum.sekme === 'gun') gunGrafikleri(hepsi, hedefler);
-    else trendGrafikleri(hepsi, hedefler);
+    else trendGrafikleri(hepsi, hedefler, kiloKayitlari);
   }
 
   /* ----- Seçili gün ----- */
@@ -1021,7 +1051,7 @@
   }
 
   /* ----- Trend ----- */
-  function trendGrafikleri(hepsi, hedefler) {
+  function trendGrafikleri(hepsi, hedefler, kiloKayitlari) {
     var bugun = yerelTarih(new Date());
     var aralikSec = h('div', { class: 'sekmeler', role: 'group', 'aria-label': 'Zaman aralığı' });
     GRAFIK_ARALIK.forEach(function (a) {
@@ -1031,17 +1061,25 @@
     content.appendChild(h('div', { class: 'araclar' }, aralikSec));
 
     /* Aralıktaki her gün; kayıt olmayan gün boş bırakılır (sıfır çizilmez) */
-    var etiket = [], kcal = [], protein = [], satir = [], gunMap = {};
+    var kiloMap = {};
+    (kiloKayitlari || []).forEach(function (k) { kiloMap[k.id] = k.kilo_kg; });
+    var etiket = [], kcal = [], protein = [], kilo = [], satir = [], gunMap = {}, kiloVarMi = false;
     hepsi.forEach(function (k) { (gunMap[k.tarih] = gunMap[k.tarih] || []).push(k); });
     for (var i = grafikDurum.aralik - 1; i >= 0; i--) {
       var t = tarihKaydir(bugun, -i);
       etiket.push(new Date(t + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }));
+      var kiloDeger = kiloMap[t] != null ? kiloMap[t] : null;
+      kilo.push(kiloDeger);
+      if (kiloDeger != null) kiloVarMi = true;
       if (gunMap[t]) {
         var top = hesapla(gunMap[t]).toplam;
         kcal.push(Math.round(top.kcal));
         protein.push(Math.round(top.protein * 10) / 10);
-        satir.push([tarihMetni(t), gunMap[t].length, Calc.fmt(top.kcal, 'kcal'), Calc.fmt(top.protein, 'g')]);
-      } else { kcal.push(null); protein.push(null); }
+        satir.push([tarihMetni(t), gunMap[t].length, Calc.fmt(top.kcal, 'kcal'), Calc.fmt(top.protein, 'g'), kiloDeger != null ? Calc.fmt(kiloDeger, 'kg') : '—']);
+      } else {
+        kcal.push(null); protein.push(null);
+        if (kiloDeger != null) satir.push([tarihMetni(t), 0, '—', '—', Calc.fmt(kiloDeger, 'kg')]);
+      }
     }
     if (!satir.length) {
       content.appendChild(h('p', { class: 'bos', text: 'Bu aralıkta kayıt yok.' }));
@@ -1057,23 +1095,30 @@
       h('p', { class: 'one-cikan', text: Calc.fmt(ortKcal, 'kcal') + ' kcal' }),
       h('p', { class: 'aciklama', text: satir.length + ' günde kayıt var; kayıt olmayan günler ortalamaya ve grafiğe katılmaz.' })));
 
-    /* İki ölçü, iki ayrı grafik: farklı birimler tek eksende karşılaştırılmaz */
-    content.appendChild(h('div', { class: 'grafik-ikili' },
+    /* Farklı ölçekler (kcal / g / kg) ayrı grafiklerde: tek eksende karşılaştırılmaz */
+    var ikili = h('div', { class: 'grafik-ikili' },
       grafikKart('Enerji (kcal)', 'İnce gri çizgi günlük hedefi gösterir.', [
         h('div', { class: 'grafik-alan tip-cizgi' },
           h('canvas', { id: 'g-trend-kcal', role: 'img', 'aria-label': 'Günlük kalori trendi; değerler tabloda listelenmiştir' }))]),
       grafikKart('Protein (g)', 'İnce gri çizgi günlük hedefi gösterir.', [
         h('div', { class: 'grafik-alan tip-cizgi' },
-          h('canvas', { id: 'g-trend-protein', role: 'img', 'aria-label': 'Günlük protein trendi; değerler tabloda listelenmiştir' }))])));
+          h('canvas', { id: 'g-trend-protein', role: 'img', 'aria-label': 'Günlük protein trendi; değerler tabloda listelenmiştir' }))]));
+    if (kiloVarMi) {
+      ikili.appendChild(grafikKart('Kilo (kg)', hedefler.hedef_kilo_kg > 0 ? 'İnce gri çizgi hedef kiloyu gösterir.' : 'Kayıt girilmeyen günler boş bırakılır.', [
+        h('div', { class: 'grafik-alan tip-cizgi' },
+          h('canvas', { id: 'g-trend-kilo', role: 'img', 'aria-label': 'Kilo trendi; değerler tabloda listelenmiştir' }))]));
+    }
+    content.appendChild(ikili);
 
     content.appendChild(h('section', { class: 'grafik-kart' },
       h('h2', { text: 'Günlük değerler' }),
-      tabloGorunum(['Gün', 'Kayıt', 'kcal', 'Protein (g)'], satir)));
+      tabloGorunum(['Gün', 'Kayıt', 'kcal', 'Protein (g)', 'Kilo (kg)'], satir)));
 
     if (root.Chart) {
       var r = Charts.renkler();
       Charts.trendCizgi('g-trend-kcal', etiket, kcal, { birim: 'kcal', hedef: hedefKcal, renk: r.seri[0] });
       Charts.trendCizgi('g-trend-protein', etiket, protein, { birim: 'g', hedef: hedefProtein, renk: r.seri[1] });
+      if (kiloVarMi) Charts.trendCizgi('g-trend-kilo', etiket, kilo, { birim: 'kg', hedef: hedefler.hedef_kilo_kg > 0 ? hedefler.hedef_kilo_kg : 0, renk: r.seri[2] });
     }
   }
 
@@ -1484,14 +1529,15 @@
 
   function hedeflerSayfasi(ilkDurum) {
     if (ilkDurum && ilkDurum.type) ilkDurum = null;
-    Promise.all([Storage.getSetting('hedefler', VARSAYILAN_HEDEF), Storage.getSetting('profil', null)])
+    Promise.all([Storage.getSetting('hedefler', VARSAYILAN_HEDEF), Storage.getSetting('profil', null), Storage.listKilo()])
       .then(function (r) {
         if (aktifSayfa !== 'hedefler') return;
-        hedeflerCiz(r[0] || VARSAYILAN_HEDEF, r[1], ilkDurum);
+        var sonKilo = r[2].slice().sort(function (a, b) { return b.id.localeCompare(a.id); })[0];
+        hedeflerCiz(r[0] || VARSAYILAN_HEDEF, r[1], ilkDurum, sonKilo);
       }).catch(function (e) { if (aktifSayfa === 'hedefler') hataGoster(e); });
   }
 
-  function hedeflerCiz(hedefler, profil, ilkDurum) {
+  function hedeflerCiz(hedefler, profil, ilkDurum, sonKilo) {
     var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
     if (ilkDurum) { durum.textContent = ilkDurum.m; durum.className = 'durum' + (ilkDurum.hata ? ' hata' : ''); }
 
@@ -1510,6 +1556,10 @@
       value: String(hedefler.su_ml != null ? hedefler.su_ml : VARSAYILAN_HEDEF.su_ml) });
     liste.appendChild(h('div', { class: 'hedef-satir' },
       h('label', {}, 'Su ', h('span', { class: 'birim', text: '(ml)' })), suGirdi));
+    var hedefKiloGirdi = h('input', { type: 'number', min: 0, step: 'any', placeholder: 'isteğe bağlı',
+      'aria-label': 'Hedef kilo (kg, isteğe bağlı)', value: hedefler.hedef_kilo_kg != null ? String(hedefler.hedef_kilo_kg) : '' });
+    liste.appendChild(h('div', { class: 'hedef-satir' },
+      h('label', {}, 'Hedef kilo ', h('span', { class: 'birim', text: '(kg, isteğe bağlı)' })), hedefKiloGirdi));
 
     /* Makro hedeflerinin enerji karşılığı, kalori hedefiyle tutarlı mı? */
     var tutarlilik = h('p', { class: 'not', role: 'status', 'aria-live': 'polite' });
@@ -1535,6 +1585,8 @@
       var suDeger = sayi(suGirdi.value);
       if (!(suDeger > 0)) hataliAd = hataliAd || 'Su';
       yeni.su_ml = suDeger;
+      var hedefKiloDeger = sayi(hedefKiloGirdi.value);
+      yeni.hedef_kilo_kg = hedefKiloDeger > 0 ? hedefKiloDeger : null; /* isteğe bağlı: boş/0 = ayarlanmamış */
       if (hataliAd) { durum.textContent = hataliAd + ' hedefi sıfırdan büyük olmalı.'; durum.className = 'durum hata'; return; }
       Storage.setSetting('hedefler', yeni).then(function () {
         hedeflerSayfasi({ m: 'Hedefler kaydedildi.', hata: false });
@@ -1544,6 +1596,7 @@
       if (!root.confirm('Hedefler varsayılan değerlere döndürülsün mü?')) return;
       HEDEF_AD.forEach(function (x) { girdi[x[0]].value = String(VARSAYILAN_HEDEF[x[0]]); });
       suGirdi.value = String(VARSAYILAN_HEDEF.su_ml);
+      hedefKiloGirdi.value = '';
       tutarlilikGuncelle();
       durum.textContent = 'Varsayılanlar yüklendi — kaydetmek için "Hedefleri kaydet" düğmesine basın.';
       durum.className = 'durum';
@@ -1559,7 +1612,8 @@
     });
     var yas = h('input', { type: 'number', min: 0, max: 120, step: 1, 'aria-label': 'Yaş', value: p.yas != null ? String(p.yas) : '' });
     var boy = h('input', { type: 'number', min: 0, step: 'any', 'aria-label': 'Boy (cm)', value: p.boy != null ? String(p.boy) : '' });
-    var kilo = h('input', { type: 'number', min: 0, step: 'any', 'aria-label': 'Kilo (kg)', value: p.kilo != null ? String(p.kilo) : '' });
+    var kiloVarsayilan = p.kilo != null ? p.kilo : (sonKilo ? sonKilo.kilo_kg : null);
+    var kilo = h('input', { type: 'number', min: 0, step: 'any', 'aria-label': 'Kilo (kg)', value: kiloVarsayilan != null ? String(kiloVarsayilan) : '' });
     var aktivite = h('select', { 'aria-label': 'Hareket düzeyi' });
     AKTIVITE.forEach(function (a) {
       var o = h('option', { value: String(a[0]), text: a[1] });

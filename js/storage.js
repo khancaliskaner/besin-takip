@@ -7,17 +7,20 @@
      Sürüm 4: kullanıcının kendi besinleri, tarifleri ve favori öğünleri için üç yeni depo.
      Sürüm 5: su kayıtları, hareket veritabanı (kendi hareketler), antrenman günlüğü, favori antrenmanlar.
      Sürüm 6: gün tamamlama işaretleri ('gunTamamlamalar' — kayıt anahtarı tarihin kendisi, ayrı dizin gerekmez).
+     Sürüm 7: kilo takibi ('kiloKayitlari' — kayıt anahtarı tarihin kendisi; günde bir ölçüm, tekrar
+       kaydedilince üzerine yazılır).
      Açılışta eksik depo VE eksik dizin tamamlanır; mevcut kayıtlara dokunulmaz. */
-  var SCHEMA_VERSION = 6;
+  var SCHEMA_VERSION = 7;
   var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id',
                  ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id',
                  suKayitlari: 'id', ozelHareketler: 'id', antrenmanGunlugu: 'id', favoriAntrenmanlar: 'id',
-                 gunTamamlamalar: 'id' };
+                 gunTamamlamalar: 'id', kiloKayitlari: 'id' };
   var INDEXES = { log: { tarih: 'tarih' }, suKayitlari: { tarih: 'tarih' }, antrenmanGunlugu: { tarih: 'tarih' } };
 
   var db = null;
   var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {},
-                 suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {}, gunTamamlamalar: {} };
+                 suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {}, gunTamamlamalar: {},
+                 kiloKayitlari: {} };
   var kalici = false;
   var sonHata = null;
 
@@ -192,7 +195,16 @@
       return tx('gunTamamlamalar', 'readonly', function (s) { return s.get(tarih); }).then(function (r) { return !!r; });
     },
     gunTamamlaIsaretle: function (tarih) { return put('gunTamamlamalar', { id: tarih, tamamlandi: true, zaman: new Date().toISOString() }); },
-    gunTamamlaKaldir: function (tarih) { return del('gunTamamlamalar', tarih); }
+    gunTamamlaKaldir: function (tarih) { return del('gunTamamlamalar', tarih); },
+
+    /* Kilo takibi: {id: tarih, kilo_kg, zaman}. Günde bir ölçüm; aynı gün tekrar kaydedilirse üzerine yazılır. */
+    listKilo: function () { return all('kiloKayitlari'); },
+    kiloOku: function (tarih) {
+      if (!kalici) return Promise.resolve(memory.kiloKayitlari[tarih] || null);
+      return tx('kiloKayitlari', 'readonly', function (s) { return s.get(tarih); }).then(function (r) { return r || null; });
+    },
+    kiloKaydet: function (tarih, kiloKg) { return put('kiloKayitlari', { id: tarih, kilo_kg: kiloKg, zaman: new Date().toISOString() }); },
+    kiloSil: function (tarih) { return del('kiloKayitlari', tarih); }
   };
 
   /* Tarih dizinli bir depodan tek günün kayıtlarını döndürür. Dizin beklenmedik şekilde

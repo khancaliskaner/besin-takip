@@ -4,7 +4,8 @@
   var OGUNLER = ['kahvaltı', 'öğle', 'akşam', 'ara öğün', 'özel'];
   var MAKS_BOYUT = 50 * 1024 * 1024;
   var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler',
-                   'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar', 'gunTamamlamalar'];
+                   'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar', 'gunTamamlamalar',
+                   'kiloKayitlari'];
 
   function gecerliTarih(s) {
     if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -33,8 +34,9 @@
     /* v3 -> v4: kendi besinler, tarifler ve favori öğünler eklendi (eski yedeklerde yoktu). */
     /* v4 -> v5: su kayıtları, kendi hareketler, antrenman günlüğü, favori antrenmanlar eklendi. */
     /* v5 -> v6: gün tamamlama işaretleri eklendi. */
+    /* v6 -> v7: kilo takibi eklendi. */
     BOLUMLER.forEach(function (k) { if (k !== 'settings' && !Array.isArray(data[k])) data[k] = []; });
-    data.schemaVersion = Math.max(v, hedefSurum || 6);
+    data.schemaVersion = Math.max(v, hedefSurum || 7);
     return data;
   }
 
@@ -187,6 +189,15 @@
       if (gtids[gt.id]) return hata('Gün tamamlama ' + gt_n + ': aynı tarih iki kez var.');
       gtids[gt.id] = 1;
       if (gt.tamamlandi !== true) return hata('Gün tamamlama ' + gt_n + ': geçersiz durum.');
+    }
+    /* Kilo takibi: anahtar tarihin kendisi (id), makul aralıkta (1-500 kg) pozitif sayı */
+    var kids = {};
+    for (i = 0; i < d.kiloKayitlari.length; i++) {
+      var kk = d.kiloKayitlari[i], kk_n = i + 1;
+      if (!kk || typeof kk.id !== 'string' || !gecerliTarih(kk.id)) return hata('Kilo kaydı ' + kk_n + ': geçersiz tarih.');
+      if (kids[kk.id]) return hata('Kilo kaydı ' + kk_n + ': aynı tarih iki kez var.');
+      kids[kk.id] = 1;
+      if (typeof kk.kilo_kg !== 'number' || !isFinite(kk.kilo_kg) || kk.kilo_kg <= 0 || kk.kilo_kg > 500) return hata('Kilo kaydı ' + kk_n + ': geçersiz değer.');
     }
     return { ok: true, veri: d };
   }
