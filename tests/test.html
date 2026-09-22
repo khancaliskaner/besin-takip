@@ -14,6 +14,7 @@
 <script src="../js/foods.js"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/backup.js"></script>
+<script src="../js/rda.js"></script>
 <script>
 (function () {
   var out = [], fails = 0;
@@ -94,7 +95,7 @@
   t('Göç: v1 yedeği (log yok) güncel sürüme yükseltilir', v1.ok && v1.veri.schemaVersion === S2 && Array.isArray(v1.veri.log) && v1.veri.log.length === 0);
   var v2 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 2, log: [{ id: 'z1', tarih: '2026-09-22', ogun: 'öğle', besin_id: 'h-bal', miktar_g: 20 }] }, S2);
   t('Göç: v2 yedeği kayıp olmadan güncel sürüme yükseltilir', v2.ok && v2.veri.schemaVersion === S2 && v2.veri.log.length === 1 && v2.veri.log[0].miktar_g === 20);
-  t('Şema sürümü 3 (log.tarih dizini onarımı)', S2 === 3);
+  t('Şema sürümü 4 (kendi besin, tarif, favori öğün depoları)', S2 === 4);
 
   var csv = Backup.csv(ornek.log, Foods.BY_ID);
   var satirlar = csv.replace('﻿', '').trim().split('\r\n');
@@ -105,6 +106,71 @@
   t('CSV: ondalık virgül (Ayran 200 g = 72 kcal, Bal 20 g protein 0,06)', satirlar[1].split(';')[6] === '72' && satirlar[2].indexOf('0,06') > -1);
   t('CSV: formül enjeksiyonu engellenir', Backup.hucre('=CMD()') === "'=CMD()" && Backup.hucre('a;b') === '"a;b"' && Backup.hucre('a"b') === '"a""b"');
   t('CSV: bilinmeyen değer boş bırakılır (0 değil)', Backup.hucre(null) === '');
+
+  /* --- Mikro besin referansları ve makro enerji payı --- */
+  t('RDA: C vitamini 45 mg = referansın %50si', yakin(RDA.yuzde('vitC', 45), 50));
+  t('RDA: referansı olmayan alan null döner', RDA.yuzde('kafein', 100) === null && RDA.yuzde('kcal', 2000) === null);
+  t('RDA: bilinmeyen değer null döner', RDA.yuzde('demir', null) === null);
+  t('RDA: sodyum üst sınır olarak işaretli', RDA.DV.sodyum.ust === true && !RDA.DV.demir.ust);
+  var rdaBilinmeyen = Object.keys(RDA.DV).filter(function (k) { return !Nutrients.BY_KEY[k]; });
+  t('RDA: tüm anahtarlar besin alanlarıyla eşleşiyor' + (rdaBilinmeyen.length ? ' (eşleşmeyen: ' + rdaBilinmeyen.join(', ') + ')' : ''), rdaBilinmeyen.length === 0);
+  var rdaBirim = Object.keys(RDA.DV).filter(function (k) { return RDA.DV[k].b !== Nutrients.BY_KEY[k].b; });
+  t('RDA: birimler besin alanlarıyla aynı' + (rdaBirim.length ? ' (farklı: ' + rdaBirim.join(', ') + ')' : ''), rdaBirim.length === 0);
+  t('RDA: kaynak belirtilmiş', /FDA/.test(RDA.KAYNAK));
+
+  var mkt = Calc.makroKalori({ protein: 10, karb: 20, yag: 5 });
+  t('Makro enerji: 10 g protein = 40 kcal, 20 g karb = 80 kcal, 5 g yağ = 45 kcal',
+    yakin(mkt.protein, 40) && yakin(mkt.karb, 80) && yakin(mkt.yag, 45));
+  t('Makro enerji: eksik makro 0 sayılır (grafik payı bozulmaz)', yakin(Calc.makroKalori({}).protein, 0));
+
+  /* --- Kendi besin, tarif, favori öğün (şema 4) --- */
+  var ornek4 = {
+    ozelBesinler: [{ id: 'k-1', ad: 'Annemin keki', kategori: 'Kendi besinim', varsayilan_g: 80,
+                     porsiyonlar: [{ ad: '1 dilim', g: 80 }], degerler: { kcal: 350, protein: 6, karb: 45, yag: 16 } }],
+    tarifler: [{ id: 't-1', ad: 'Yulaflı kahvaltı', toplam_g: 250,
+                 bilesenler: [{ besin_id: 'h-yulaf-ezmesi-cig', gram: 50 }, { besin_id: 'h-sut-tam-yagli', gram: 200 }] }],
+    favoriOgunler: [{ id: 'f-1', ad: 'Standart kahvaltım', ogun: 'kahvaltı',
+                      kalemler: [{ besin_id: 'h-yumurta-haslanmis', miktar_g: 100 }, { besin_id: 'h-beyaz-ekmek', miktar_g: 60 }] }]
+  };
+  var p4 = Backup.paketle(ornek4, S2);
+  t('Yedek: kendi besin, tarif ve favori öğün pakete girer',
+    p4.ozelBesinler.length === 1 && p4.tarifler.length === 1 && p4.favoriOgunler.length === 1);
+  var d4 = Backup.dogrula(JSON.parse(JSON.stringify(p4)), S2);
+  t('Yedek: şema 4 paketi doğrulanır', d4.ok && d4.veri.tarifler[0].toplam_g === 250);
+  var v3 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 3, log: [] }, S2);
+  t('Göç: v3 yedeği v4e yükseltilir, yeni bölümler boş dizi olur',
+    v3.ok && v3.veri.schemaVersion === 4 && v3.veri.ozelBesinler.length === 0 && v3.veri.tarifler.length === 0);
+
+  function boz4(bolum, degis) {
+    var c = JSON.parse(JSON.stringify(p4));
+    degis(c[bolum][0]);
+    return Backup.dogrula(c, S2).ok;
+  }
+  t('Bozuk: kendi besinde ad yok', !boz4('ozelBesinler', function (b) { b.ad = '  '; }));
+  t('Bozuk: kendi besinde kalori sayı değil', !boz4('ozelBesinler', function (b) { b.degerler.kcal = 'abc'; }));
+  t('Bozuk: kendi besinde porsiyon gramı sıfır', !boz4('ozelBesinler', function (b) { b.porsiyonlar[0].g = 0; }));
+  t('Bozuk: tarifte bileşen listesi boş', !boz4('tarifler', function (x) { x.bilesenler = []; }));
+  t('Bozuk: tarifte bileşen miktarı negatif', !boz4('tarifler', function (x) { x.bilesenler[0].gram = -5; }));
+  t('Bozuk: tarifte toplam ağırlık sıfır', !boz4('tarifler', function (x) { x.toplam_g = 0; }));
+  t('Bozuk: favori öğünde besin listesi boş', !boz4('favoriOgunler', function (x) { x.kalemler = []; }));
+
+  /* Tarif → besin dönüşümü: 50 g yulaf (379 kcal/100g) + 200 g süt (61 kcal/100g) = 189,5+122 = 311,5 kcal / 250 g */
+  var tb = Foods.tarifBesine(ornek4.tarifler[0], Foods.BY_ID);
+  t('Tarif: 100 g başına kalori doğru hesaplanır (311,5 kcal / 250 g = 124,6)', yakin(tb.degerler.kcal, 124.6, 0.05));
+  t('Tarif: porsiyon tanımı üretilir', tb.porsiyonlar.length >= 1 && tb.porsiyonlar[0].g === 250);
+  t('Tarif: kategori "Tarif" ve doğrulanmamış', tb.kategori === 'Tarif' && tb.dogrulandi === false);
+  var tbBos = Foods.tarifBesine({ id: 'x', ad: 'Boş', toplam_g: 100, bilesenler: [{ besin_id: 'yok-boyle-besin', gram: 50 }] }, Foods.BY_ID);
+  t('Tarif: bilinmeyen bileşen değeri null yapar (0 sayılmaz)', tbBos.degerler.kcal === null);
+
+  /* Foods.guncelle: kendi besinler ve tarifler aramaya karışır */
+  var oncekiSayi = Foods.ALL.length;
+  Foods.guncelle(ornek4.ozelBesinler, ornek4.tarifler);
+  t('Foods: kendi besin ve tarif listeye eklenir', Foods.ALL.length === oncekiSayi + 2);
+  t('Foods: kendi besin aramada bulunur', Foods.search('annemin').length === 1);
+  t('Foods: tarif aramada bulunur', Foods.search('yulafli kahvalti').length === 1);
+  t('Foods: kendi besin kimlikle erişilir', !!Foods.BY_ID['k-1'] && Foods.BY_ID['k-1'].kendi === true);
+  Foods.guncelle([], []);
+  t('Foods: liste geri alınır (hazır besinler bozulmaz)', Foods.ALL.length === oncekiSayi && !Foods.BY_ID['k-1']);
 
   out.push('');
   out.push('Besin sayısı: ' + Foods.ALL.length + '  (hedef: 500+)');

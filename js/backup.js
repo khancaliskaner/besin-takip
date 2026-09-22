@@ -19,7 +19,10 @@
       settings: (parca.settings || []).filter(function (s) { return s.key !== 'sonYedek'; }),
       favorites: parca.favorites || [],
       recents: parca.recents || [],
-      log: parca.log || []
+      log: parca.log || [],
+      ozelBesinler: parca.ozelBesinler || [],
+      tarifler: parca.tarifler || [],
+      favoriOgunler: parca.favoriOgunler || []
     };
   }
 
@@ -29,7 +32,11 @@
     /* v1 -> v2: 'log' deposu eklendi (v1 yedeklerinde yoktu) */
     if (v < 2 && !Array.isArray(data.log)) data.log = [];
     /* v2 -> v3: yalnızca IndexedDB'deki 'tarih' dizini onarıldı; yedek biçimi değişmedi. */
-    data.schemaVersion = Math.max(v, hedefSurum || 3);
+    /* v3 -> v4: kendi besinler, tarifler ve favori öğünler eklendi (eski yedeklerde yoktu). */
+    if (!Array.isArray(data.ozelBesinler)) data.ozelBesinler = [];
+    if (!Array.isArray(data.tarifler)) data.tarifler = [];
+    if (!Array.isArray(data.favoriOgunler)) data.favoriOgunler = [];
+    data.schemaVersion = Math.max(v, hedefSurum || 4);
     return data;
   }
 
@@ -43,12 +50,14 @@
     if (v > mevcutSurum) return hata('Bu yedek programın daha yeni bir sürümüyle alınmış (sürüm ' + v + '). Programı güncelleyin.');
     var d = {
       uygulama: UYGULAMA, schemaVersion: v, disaAktarim: data.disaAktarim,
-      settings: data.settings, favorites: data.favorites, recents: data.recents, log: data.log
+      settings: data.settings, favorites: data.favorites, recents: data.recents, log: data.log,
+      ozelBesinler: data.ozelBesinler, tarifler: data.tarifler, favoriOgunler: data.favoriOgunler
     };
     d = goc(d, mevcutSurum);
-    ['settings', 'favorites', 'recents', 'log'].forEach(function (k) { if (d[k] == null) d[k] = []; });
-    for (var k = 0; k < 4; k++) {
-      var ad = ['settings', 'favorites', 'recents', 'log'][k];
+    var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler'];
+    BOLUMLER.forEach(function (k) { if (d[k] == null) d[k] = []; });
+    for (var k = 0; k < BOLUMLER.length; k++) {
+      var ad = BOLUMLER[k];
       if (!Array.isArray(d[ad])) return hata('"' + ad + '" bölümü bozuk.');
     }
     var i;
@@ -73,6 +82,53 @@
       if (OGUNLER.indexOf(e.ogun) === -1) return hata('Öğün kaydı ' + n + ': geçersiz öğün.');
       if (typeof e.besin_id !== 'string' || !e.besin_id) return hata('Öğün kaydı ' + n + ': besin eksik.');
       if (typeof e.miktar_g !== 'number' || !isFinite(e.miktar_g) || e.miktar_g < 0) return hata('Öğün kaydı ' + n + ': geçersiz miktar.');
+    }
+    /* Kendi besinler: değerler nesnesi ve porsiyonlar tutarlı olmalı */
+    var bids = {};
+    for (i = 0; i < d.ozelBesinler.length; i++) {
+      var b = d.ozelBesinler[i], bn = i + 1;
+      if (!b || typeof b.id !== 'string' || !b.id) return hata('Kendi besin ' + bn + ': kimlik eksik.');
+      if (bids[b.id]) return hata('Kendi besin ' + bn + ': aynı kimlik iki kez var.');
+      bids[b.id] = 1;
+      if (typeof b.ad !== 'string' || !b.ad.trim()) return hata('Kendi besin ' + bn + ': ad eksik.');
+      if (!b.degerler || typeof b.degerler !== 'object') return hata('Kendi besin ' + bn + ': besin değerleri eksik.');
+      if (typeof b.degerler.kcal !== 'number' || b.degerler.kcal < 0) return hata('Kendi besin ' + bn + ': kalori değeri geçersiz.');
+      if (!Array.isArray(b.porsiyonlar)) return hata('Kendi besin ' + bn + ': porsiyon listesi bozuk.');
+      for (var pi = 0; pi < b.porsiyonlar.length; pi++) {
+        var p = b.porsiyonlar[pi];
+        if (!p || typeof p.ad !== 'string' || typeof p.g !== 'number' || !(p.g > 0)) return hata('Kendi besin ' + bn + ': porsiyon tanımı geçersiz.');
+      }
+    }
+    /* Tarifler: en az bir bileşen, pozitif toplam ağırlık */
+    var tids = {};
+    for (i = 0; i < d.tarifler.length; i++) {
+      var tr = d.tarifler[i], tn = i + 1;
+      if (!tr || typeof tr.id !== 'string' || !tr.id) return hata('Tarif ' + tn + ': kimlik eksik.');
+      if (tids[tr.id]) return hata('Tarif ' + tn + ': aynı kimlik iki kez var.');
+      tids[tr.id] = 1;
+      if (typeof tr.ad !== 'string' || !tr.ad.trim()) return hata('Tarif ' + tn + ': ad eksik.');
+      if (!Array.isArray(tr.bilesenler) || !tr.bilesenler.length) return hata('Tarif ' + tn + ': bileşen listesi boş.');
+      for (var bi = 0; bi < tr.bilesenler.length; bi++) {
+        var bl = tr.bilesenler[bi];
+        if (!bl || typeof bl.besin_id !== 'string' || !bl.besin_id) return hata('Tarif ' + tn + ': bileşen besini eksik.');
+        if (typeof bl.gram !== 'number' || !(bl.gram > 0)) return hata('Tarif ' + tn + ': bileşen miktarı geçersiz.');
+      }
+      if (typeof tr.toplam_g !== 'number' || !(tr.toplam_g > 0)) return hata('Tarif ' + tn + ': toplam ağırlık geçersiz.');
+    }
+    /* Favori öğünler */
+    var fids = {};
+    for (i = 0; i < d.favoriOgunler.length; i++) {
+      var fo = d.favoriOgunler[i], fn = i + 1;
+      if (!fo || typeof fo.id !== 'string' || !fo.id) return hata('Favori öğün ' + fn + ': kimlik eksik.');
+      if (fids[fo.id]) return hata('Favori öğün ' + fn + ': aynı kimlik iki kez var.');
+      fids[fo.id] = 1;
+      if (typeof fo.ad !== 'string' || !fo.ad.trim()) return hata('Favori öğün ' + fn + ': ad eksik.');
+      if (!Array.isArray(fo.kalemler) || !fo.kalemler.length) return hata('Favori öğün ' + fn + ': besin listesi boş.');
+      for (var ki = 0; ki < fo.kalemler.length; ki++) {
+        var kl = fo.kalemler[ki];
+        if (!kl || typeof kl.besin_id !== 'string' || !kl.besin_id) return hata('Favori öğün ' + fn + ': besin eksik.');
+        if (typeof kl.miktar_g !== 'number' || !(kl.miktar_g > 0)) return hata('Favori öğün ' + fn + ': miktar geçersiz.');
+      }
     }
     return { ok: true, veri: d };
   }

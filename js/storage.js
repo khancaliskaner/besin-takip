@@ -4,13 +4,15 @@
   var DB_NAME = 'besin-takip';
   /* Sürüm 2: 'log' deposu (öğün kayıtları) eklendi.
      Sürüm 3: 'log' deposunda eksik kalabilen 'tarih' dizini onarılır (v2'de depo dizinsiz oluşmuş olabilir).
+     Sürüm 4: kullanıcının kendi besinleri, tarifleri ve favori öğünleri için üç yeni depo.
      Açılışta eksik depo VE eksik dizin tamamlanır; mevcut kayıtlara dokunulmaz. */
-  var SCHEMA_VERSION = 3;
-  var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id' };
+  var SCHEMA_VERSION = 4;
+  var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id',
+                 ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id' };
   var INDEXES = { log: { tarih: 'tarih' } }; /* depo -> { dizin adı: anahtar yolu } */
 
   var db = null;
-  var memory = { settings: {}, favorites: {}, recents: {}, log: {} };
+  var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {} };
   var kalici = false;
   var sonHata = null;
 
@@ -112,14 +114,18 @@
 
     /* Yedek: tüm depoları okur / tek işlemde (atomik) topluca değiştirir. Hata olursa hiçbir şey değişmez. */
     exportParcalari: function () {
-      return Promise.all([all('settings'), all('favorites'), all('recents'), all('log')]).then(function (r) {
-        return { settings: r[0], favorites: r[1], recents: r[2], log: r[3] };
+      var adlar = Object.keys(STORES);
+      return Promise.all(adlar.map(all)).then(function (r) {
+        var o = {};
+        adlar.forEach(function (n, i) { o[n] = r[i]; });
+        return o;
       });
     },
     tumLog: function () { return all('log'); },
     degistirHepsini: function (v) {
-      var map = { settings: v.settings || [], favorites: v.favorites || [], recents: v.recents || [], log: v.log || [] };
       var adlar = Object.keys(STORES);
+      var map = {};
+      adlar.forEach(function (n) { map[n] = Array.isArray(v[n]) ? v[n] : []; });
       if (!kalici) {
         adlar.forEach(function (n) { memory[n] = {}; map[n].forEach(function (o) { memory[n][o[STORES[n]]] = o; }); });
         return Promise.resolve();
@@ -133,6 +139,21 @@
     },
 
     /* Öğün kayıtları: {id, tarih 'YYYY-MM-DD', ogun, besin_id, miktar_g, saat?, not?} */
+    /* Kullanıcının kendi besinleri: {id, ad, kategori, porsiyonlar[], degerler{}, kaynak:'kullanıcı'} */
+    listOzelBesin: function () { return all('ozelBesinler'); },
+    putOzelBesin: function (b) { return put('ozelBesinler', b); },
+    deleteOzelBesin: function (id) { return del('ozelBesinler', id); },
+
+    /* Tarifler: {id, ad, bilesenler:[{besin_id, gram}], toplam_g, porsiyonlar[]} */
+    listTarif: function () { return all('tarifler'); },
+    putTarif: function (t) { return put('tarifler', t); },
+    deleteTarif: function (id) { return del('tarifler', id); },
+
+    /* Favori öğünler: {id, ad, ogun, kalemler:[{besin_id, miktar_g}]} */
+    listFavoriOgun: function () { return all('favoriOgunler'); },
+    putFavoriOgun: function (f) { return put('favoriOgunler', f); },
+    deleteFavoriOgun: function (id) { return del('favoriOgunler', id); },
+
     putLog: function (kayit) { return put('log', kayit); },
     deleteLog: function (id) { return del('log', id); },
     listLogByDate: function (tarih) {
