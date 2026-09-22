@@ -196,3 +196,24 @@ button.kucuk { padding: 3px 9px; font-size: 13px; }
 .deger-alan input { width: 90px; }
 details.deger-grup { border: 1px solid var(--cizgi); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
 details.deger-grup summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+
+/* Su takibi (Bugün sayfası) */
+.su-ozel-ml { width: 90px; }
+.su-liste { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.su-cip { display: inline-flex; align-items: center; gap: 6px; background: var(--vurgu-acik); color: var(--vurgu); border-radius: 14px; padding: 4px 6px 4px 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.su-cip-sil { background: transparent; border: 0; color: inherit; font-size: 16px; line-height: 1; padding: 0 6px; cursor: pointer; border-radius: 50%; }
+.su-cip-sil:hover { background: rgba(0,0,0,0.08); }
+:root[data-tema="koyu"] .su-cip-sil:hover { background: rgba(255,255,255,0.12); }
+
+/* Spor sayfası: set girişi, hareket listesi */
+.set-satirlar { display: grid; gap: 6px; margin-bottom: 8px; }
+.set-satir { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.set-satir .set-no { width: 56px; color: var(--soluk); flex: none; }
+.set-satir input[type="number"] { width: 80px; }
+.set-satir .birim { color: var(--soluk); font-size: 13px; }
+.hareket-kart { background: var(--panel); border: 1px solid var(--cizgi); border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; }
+.hareket-ust { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.hareket-ust h3 { margin: 0; font-size: 15px; }
+.set-ozet-tablo { width: 100%; border-collapse: collapse; font-size: 13px; }
+.set-ozet-tablo th, .set-ozet-tablo td { padding: 4px 10px 4px 0; text-align: left; color: var(--soluk); }
+.set-ozet-tablo td.sayi, .set-ozet-tablo th.sayi { text-align: right; font-variant-numeric: tabular-nums; color: var(--metin); }

@@ -3,6 +3,8 @@
   var UYGULAMA = 'besin-takip';
   var OGUNLER = ['kahvaltı', 'öğle', 'akşam', 'ara öğün', 'özel'];
   var MAKS_BOYUT = 50 * 1024 * 1024;
+  var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler',
+                   'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar'];
 
   function gecerliTarih(s) {
     if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -12,18 +14,14 @@
 
   /* Depodan gelen dizilerle yedek nesnesi üretir. 'sonYedek' cihaza özgü olduğundan dışarı yazılmaz. */
   function paketle(parca, surum) {
-    return {
+    var v = {
       uygulama: UYGULAMA,
       schemaVersion: surum,
       disaAktarim: new Date().toISOString(),
-      settings: (parca.settings || []).filter(function (s) { return s.key !== 'sonYedek'; }),
-      favorites: parca.favorites || [],
-      recents: parca.recents || [],
-      log: parca.log || [],
-      ozelBesinler: parca.ozelBesinler || [],
-      tarifler: parca.tarifler || [],
-      favoriOgunler: parca.favoriOgunler || []
+      settings: (parca.settings || []).filter(function (s) { return s.key !== 'sonYedek'; })
     };
+    BOLUMLER.forEach(function (k) { if (k !== 'settings') v[k] = parca[k] || []; });
+    return v;
   }
 
   /* Eski şema sürümlerini güncel biçime getirir. Yeni sürüm eklendikçe buraya adım eklenir. */
@@ -33,10 +31,9 @@
     if (v < 2 && !Array.isArray(data.log)) data.log = [];
     /* v2 -> v3: yalnızca IndexedDB'deki 'tarih' dizini onarıldı; yedek biçimi değişmedi. */
     /* v3 -> v4: kendi besinler, tarifler ve favori öğünler eklendi (eski yedeklerde yoktu). */
-    if (!Array.isArray(data.ozelBesinler)) data.ozelBesinler = [];
-    if (!Array.isArray(data.tarifler)) data.tarifler = [];
-    if (!Array.isArray(data.favoriOgunler)) data.favoriOgunler = [];
-    data.schemaVersion = Math.max(v, hedefSurum || 4);
+    /* v4 -> v5: su kayıtları, kendi hareketler, antrenman günlüğü, favori antrenmanlar eklendi. */
+    BOLUMLER.forEach(function (k) { if (k !== 'settings' && !Array.isArray(data[k])) data[k] = []; });
+    data.schemaVersion = Math.max(v, hedefSurum || 5);
     return data;
   }
 
@@ -48,13 +45,9 @@
     var v = data.schemaVersion;
     if (typeof v !== 'number' || v % 1 !== 0 || v < 1) return hata('Yedek sürümü okunamadı.');
     if (v > mevcutSurum) return hata('Bu yedek programın daha yeni bir sürümüyle alınmış (sürüm ' + v + '). Programı güncelleyin.');
-    var d = {
-      uygulama: UYGULAMA, schemaVersion: v, disaAktarim: data.disaAktarim,
-      settings: data.settings, favorites: data.favorites, recents: data.recents, log: data.log,
-      ozelBesinler: data.ozelBesinler, tarifler: data.tarifler, favoriOgunler: data.favoriOgunler
-    };
+    var d = { uygulama: UYGULAMA, schemaVersion: v, disaAktarim: data.disaAktarim };
+    BOLUMLER.forEach(function (k) { d[k] = data[k]; });
     d = goc(d, mevcutSurum);
-    var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler'];
     BOLUMLER.forEach(function (k) { if (d[k] == null) d[k] = []; });
     for (var k = 0; k < BOLUMLER.length; k++) {
       var ad = BOLUMLER[k];
@@ -128,6 +121,61 @@
         var kl = fo.kalemler[ki];
         if (!kl || typeof kl.besin_id !== 'string' || !kl.besin_id) return hata('Favori öğün ' + fn + ': besin eksik.');
         if (typeof kl.miktar_g !== 'number' || !(kl.miktar_g > 0)) return hata('Favori öğün ' + fn + ': miktar geçersiz.');
+      }
+    }
+    /* Su kayıtları */
+    var sids = {};
+    for (i = 0; i < d.suKayitlari.length; i++) {
+      var su = d.suKayitlari[i], sn = i + 1;
+      if (!su || typeof su.id !== 'string' || !su.id) return hata('Su kaydı ' + sn + ': kimlik eksik.');
+      if (sids[su.id]) return hata('Su kaydı ' + sn + ': aynı kimlik iki kez var.');
+      sids[su.id] = 1;
+      if (!gecerliTarih(su.tarih)) return hata('Su kaydı ' + sn + ': geçersiz tarih.');
+      if (typeof su.ml !== 'number' || !isFinite(su.ml) || su.ml <= 0) return hata('Su kaydı ' + sn + ': geçersiz miktar.');
+    }
+    /* Kendi hareketler */
+    var hids = {};
+    for (i = 0; i < d.ozelHareketler.length; i++) {
+      var hr = d.ozelHareketler[i], hn = i + 1;
+      if (!hr || typeof hr.id !== 'string' || !hr.id) return hata('Kendi hareket ' + hn + ': kimlik eksik.');
+      if (hids[hr.id]) return hata('Kendi hareket ' + hn + ': aynı kimlik iki kez var.');
+      hids[hr.id] = 1;
+      if (typeof hr.ad !== 'string' || !hr.ad.trim()) return hata('Kendi hareket ' + hn + ': ad eksik.');
+    }
+    /* Setler ortak biçim: [{tekrar, agirlik_kg?, dinlenme_sn?}] — ağırlık/dinlenme isteğe bağlı, tekrar zorunlu */
+    function setlerGecerliMi(setler) {
+      if (!Array.isArray(setler) || !setler.length) return false;
+      return setler.every(function (s) {
+        if (!s || typeof s.tekrar !== 'number' || !(s.tekrar > 0)) return false;
+        if (s.agirlik_kg != null && (typeof s.agirlik_kg !== 'number' || s.agirlik_kg < 0)) return false;
+        if (s.dinlenme_sn != null && (typeof s.dinlenme_sn !== 'number' || s.dinlenme_sn < 0)) return false;
+        return true;
+      });
+    }
+    /* Antrenman günlüğü */
+    var aids = {};
+    for (i = 0; i < d.antrenmanGunlugu.length; i++) {
+      var an = d.antrenmanGunlugu[i], an_n = i + 1;
+      if (!an || typeof an.id !== 'string' || !an.id) return hata('Antrenman kaydı ' + an_n + ': kimlik eksik.');
+      if (aids[an.id]) return hata('Antrenman kaydı ' + an_n + ': aynı kimlik iki kez var.');
+      aids[an.id] = 1;
+      if (!gecerliTarih(an.tarih)) return hata('Antrenman kaydı ' + an_n + ': geçersiz tarih.');
+      if (typeof an.hareket_id !== 'string' || !an.hareket_id) return hata('Antrenman kaydı ' + an_n + ': hareket eksik.');
+      if (!setlerGecerliMi(an.setler)) return hata('Antrenman kaydı ' + an_n + ': set listesi geçersiz (en az bir set, her sette pozitif tekrar sayısı gerekir).');
+    }
+    /* Favori antrenmanlar */
+    var faids = {};
+    for (i = 0; i < d.favoriAntrenmanlar.length; i++) {
+      var fa = d.favoriAntrenmanlar[i], fa_n = i + 1;
+      if (!fa || typeof fa.id !== 'string' || !fa.id) return hata('Favori antrenman ' + fa_n + ': kimlik eksik.');
+      if (faids[fa.id]) return hata('Favori antrenman ' + fa_n + ': aynı kimlik iki kez var.');
+      faids[fa.id] = 1;
+      if (typeof fa.ad !== 'string' || !fa.ad.trim()) return hata('Favori antrenman ' + fa_n + ': ad eksik.');
+      if (!Array.isArray(fa.hareketler) || !fa.hareketler.length) return hata('Favori antrenman ' + fa_n + ': hareket listesi boş.');
+      for (var hi = 0; hi < fa.hareketler.length; hi++) {
+        var hl = fa.hareketler[hi];
+        if (!hl || typeof hl.hareket_id !== 'string' || !hl.hareket_id) return hata('Favori antrenman ' + fa_n + ': hareket eksik.');
+        if (!setlerGecerliMi(hl.setler)) return hata('Favori antrenman ' + fa_n + ': set listesi geçersiz.');
       }
     }
     return { ok: true, veri: d };

@@ -3,7 +3,7 @@
 (function (root) {
   var doc = root.document;
   var Calc = root.Calc, Foods = root.Foods, Nutrients = root.Nutrients, Storage = root.Storage;
-  var Charts = root.Charts, RDA = root.RDA;
+  var Charts = root.Charts, RDA = root.RDA, Exercises = root.Exercises;
 
   function h(tag, props) {
     var el = doc.createElement(tag);
@@ -319,7 +319,7 @@
   var OGUNLER = ['kahvaltı', 'öğle', 'akşam', 'ara öğün', 'özel'];
   var OGUN_AD = { 'kahvaltı': 'Kahvaltı', 'öğle': 'Öğle yemeği', 'akşam': 'Akşam yemeği', 'ara öğün': 'Ara öğün', 'özel': 'Özel' };
   /* Varsayılan hedefler; düzenleme sayfası Aşama 6'da eklenecek. */
-  var VARSAYILAN_HEDEF = { kcal: 2000, protein: 100, karb: 250, yag: 70, lif: 30 };
+  var VARSAYILAN_HEDEF = { kcal: 2000, protein: 100, karb: 250, yag: 70, lif: 30, su_ml: 2000 };
   var HEDEF_AD = [['kcal', 'Kalori', 'kcal'], ['protein', 'Protein', 'g'], ['karb', 'Karbonhidrat', 'g'], ['yag', 'Yağ', 'g'], ['lif', 'Lif', 'g']];
   var gun = { tarih: null, sira: 0 };
   var aktifSayfa = '';
@@ -346,8 +346,8 @@
   function bugunSayfasi() {
     if (!gun.tarih) gun.tarih = yerelTarih(new Date());
     var sira = ++gun.sira;
-    Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF)]).then(function (r) {
-      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1]);
+    Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF), Storage.listSuByDate(gun.tarih)]).then(function (r) {
+      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2]);
     }).catch(function (e) { if (aktifSayfa === 'bugun') hataGoster(e); });
   }
   function yenile() { bugunSayfasi(); }
@@ -365,7 +365,38 @@
       eksikSayisi ? h('div', { class: 'not', text: eksikSayisi + ' kayıtta bu değer bilinmiyor; toplam eksik olabilir.' }) : null);
   }
 
-  function bugunCiz(kayitlar, hedefler) {
+  var SU_HIZLI = [[200, '1 bardak (200 ml)'], [330, '1 kutu (330 ml)'], [500, '1 şişe (500 ml)']];
+  function suPaneli(suKayitlari, hedefMl) {
+    var toplam = suKayitlari.reduce(function (a, k) { return a + k.ml; }, 0);
+    function ekle(ml) {
+      if (!(ml > 0)) return;
+      var simdi = new Date();
+      Storage.putSu({ id: yeniId(), tarih: gun.tarih, ml: ml, saat: pad(simdi.getHours()) + ':' + pad(simdi.getMinutes()) }).then(yenile);
+    }
+    var ozelMl = h('input', { type: 'number', min: 0, step: 'any', placeholder: 'ml', class: 'su-ozel-ml', 'aria-label': 'Özel miktar (ml)' });
+    var dugmeler = h('div', { class: 'araclar' });
+    SU_HIZLI.forEach(function (x) {
+      dugmeler.appendChild(h('button', { type: 'button', class: 'ikincil', text: '+ ' + x[1], onclick: function () { ekle(x[0]); } }));
+    });
+    dugmeler.appendChild(ozelMl);
+    dugmeler.appendChild(h('button', { type: 'button', class: 'ikincil', text: 'Ekle',
+      onclick: function () { ekle(sayi(ozelMl.value)); ozelMl.value = ''; } }));
+
+    var panel = h('section', { class: 'panel' }, h('h2', { text: 'Su' }), dugmeler,
+      ilerlemeCubugu('Su', toplam, hedefMl, 'ml'));
+    if (suKayitlari.length) {
+      var liste = h('div', { class: 'su-liste' });
+      suKayitlari.slice().sort(function (a, b) { return String(a.saat || '').localeCompare(String(b.saat || '')); }).forEach(function (k) {
+        liste.appendChild(h('span', { class: 'su-cip' }, Calc.fmt(k.ml, 'ml') + ' ml' + (k.saat ? ' · ' + k.saat : ''),
+          h('button', { type: 'button', class: 'su-cip-sil', 'aria-label': 'Su kaydını sil (' + k.ml + ' ml)',
+            onclick: function () { Storage.deleteSu(k.id).then(yenile); }, text: '×' })));
+      });
+      panel.appendChild(liste);
+    }
+    return panel;
+  }
+
+  function bugunCiz(kayitlar, hedefler, suKayitlari) {
     var bugun = yerelTarih(new Date());
     var hs = hesapla(kayitlar);
     var sayfa = h('div');
@@ -389,6 +420,10 @@
     });
     if (!kayitlar.length) ozet.appendChild(h('p', { class: 'not', text: 'Bu güne henüz besin eklenmedi.' }));
     sayfa.appendChild(ozet);
+
+    /* Su */
+    var suHedef = hedefler.su_ml != null ? hedefler.su_ml : VARSAYILAN_HEDEF.su_ml;
+    sayfa.appendChild(suPaneli(suKayitlari, suHedef));
 
     /* Öğünler */
     OGUNLER.forEach(function (og) {
@@ -663,11 +698,12 @@
       if (!root.confirm(msg)) { sonuc('İçe aktarma iptal edildi.', false); return; }
       yedekAl('besin-takip-ice-aktarma-oncesi').then(function () { return Storage.degistirHepsini(d.veri); })
         .then(function () { return Storage.setSetting('sonYedek', new Date().toISOString()); })
-        .then(function () { return Promise.all([Storage.listFavorites(), Storage.listRecents(), Storage.getSetting('tema', 'acik'), besinListesiniTazele()]); })
+        .then(function () { return Promise.all([Storage.listFavorites(), Storage.listRecents(), Storage.getSetting('tema', 'acik'), besinListesiniTazele(), hareketListesiniTazele()]); })
         .then(function (r) {
           state.favs = new Set(r[0]); state.recents = r[1]; temaUygula(r[2]);
           sonuc('İçe aktarma tamam: ' + d.veri.log.length + ' öğün kaydı, ' + d.veri.ozelBesinler.length +
-            ' kendi besin, ' + d.veri.tarifler.length + ' tarif geri yüklendi.', false);
+            ' kendi besin, ' + d.veri.tarifler.length + ' tarif, ' + d.veri.antrenmanGunlugu.length +
+            ' antrenman kaydı, ' + d.veri.suKayitlari.length + ' su kaydı geri yüklendi.', false);
           hatirlatmaKontrol();
         })
         .catch(function () { sonuc('İçe aktarma sırasında hata oluştu; mevcut veriler değişmedi.', true); });
@@ -679,7 +715,7 @@
     var yaz = root.prompt('Onaylamak için SİL yazın:');
     if (yaz == null || Calc.norm(yaz) !== 'sil') { sonuc('Silme iptal edildi.', false); return; }
     yedekAl('besin-takip-silme-oncesi').then(function () { return Storage.degistirHepsini({}); })
-      .then(besinListesiniTazele)
+      .then(function () { return Promise.all([besinListesiniTazele(), hareketListesiniTazele()]); })
       .then(function () { state.favs = new Set(); state.recents = []; sonuc('Tüm veriler silindi. Silme öncesi yedek dosyası indirildi.', false); hatirlatmaKontrol(); })
       .catch(function () { sonuc('Silme sırasında hata oluştu.', true); });
   }
@@ -1416,6 +1452,10 @@
       liste.appendChild(h('div', { class: 'hedef-satir' },
         h('label', {}, x[1] + ' ', h('span', { class: 'birim', text: '(' + x[2] + ')' })), inp));
     });
+    var suGirdi = h('input', { type: 'number', min: 0, step: 'any', 'aria-label': 'Su hedefi (ml)',
+      value: String(hedefler.su_ml != null ? hedefler.su_ml : VARSAYILAN_HEDEF.su_ml) });
+    liste.appendChild(h('div', { class: 'hedef-satir' },
+      h('label', {}, 'Su ', h('span', { class: 'birim', text: '(ml)' })), suGirdi));
 
     /* Makro hedeflerinin enerji karşılığı, kalori hedefiyle tutarlı mı? */
     var tutarlilik = h('p', { class: 'not', role: 'status', 'aria-live': 'polite' });
@@ -1438,6 +1478,9 @@
         if (!(v > 0)) hataliAd = hataliAd || x[1];
         yeni[x[0]] = v;
       });
+      var suDeger = sayi(suGirdi.value);
+      if (!(suDeger > 0)) hataliAd = hataliAd || 'Su';
+      yeni.su_ml = suDeger;
       if (hataliAd) { durum.textContent = hataliAd + ' hedefi sıfırdan büyük olmalı.'; durum.className = 'durum hata'; return; }
       Storage.setSetting('hedefler', yeni).then(function () {
         hedeflerSayfasi({ m: 'Hedefler kaydedildi.', hata: false });
@@ -1446,6 +1489,7 @@
     function varsayilana() {
       if (!root.confirm('Hedefler varsayılan değerlere döndürülsün mü?')) return;
       HEDEF_AD.forEach(function (x) { girdi[x[0]].value = String(VARSAYILAN_HEDEF[x[0]]); });
+      suGirdi.value = String(VARSAYILAN_HEDEF.su_ml);
       tutarlilikGuncelle();
       durum.textContent = 'Varsayılanlar yüklendi — kaydetmek için "Hedefleri kaydet" düğmesine basın.';
       durum.className = 'durum';
@@ -1563,12 +1607,344 @@
     hesapla();
   }
 
+
+  /* ---------- Spor ----------
+     Bugün sayfasıyla aynı gün kavramını (gun.tarih) paylaşır: Bugün'de dünü seçip Spor'a
+     geçersen aynı gün gösterilir. Hareket veritabanı (js/exercises-data.js) besin sistemiyle
+     aynı desende: arama + kategori filtresi + kendi hareket ekleme. Kalori hesabı yapılmaz;
+     kullanıcı yalnızca set/tekrar/ağırlık/dinlenme takibi istedi. */
+  var HAREKET_KATEGORI_SIRA = ['Göğüs', 'Sırt', 'Omuz', 'Biceps', 'Triceps', 'Bacak', 'Karın',
+    'Kardiyo', 'Tüm vücut/Fonksiyonel', 'Esneklik/Mobilite', 'Diğer'];
+  function hareketKategorilerSirali() {
+    return Exercises.kategoriler().slice().sort(function (a, b) {
+      var ia = HAREKET_KATEGORI_SIRA.indexOf(a), ib = HAREKET_KATEGORI_SIRA.indexOf(b);
+      if (ia === -1) ia = 999; if (ib === -1) ib = 999;
+      return ia - ib || a.localeCompare(b, 'tr');
+    });
+  }
+
+  /* Dinamik set satırları: her satırda tekrar (zorunlu), ağırlık kg (opsiyonel), dinlenme sn (opsiyonel). */
+  function setDuzenleyici(baslangic) {
+    var kap = h('div', { class: 'set-satirlar' });
+    var sayac = 0;
+    function satirEkle(deger) {
+      sayac++;
+      var no = sayac;
+      var tekrar = h('input', { type: 'number', min: 0, step: 1, value: deger && deger.tekrar != null ? String(deger.tekrar) : '10', 'aria-label': 'Set ' + no + ' tekrar sayısı' });
+      var agirlik = h('input', { type: 'number', min: 0, step: 'any', value: deger && deger.agirlik_kg != null ? String(deger.agirlik_kg) : '', placeholder: '—', 'aria-label': 'Set ' + no + ' ağırlık (kg)' });
+      var dinlenme = h('input', { type: 'number', min: 0, step: 1, value: deger && deger.dinlenme_sn != null ? String(deger.dinlenme_sn) : '', placeholder: '—', 'aria-label': 'Set ' + no + ' dinlenme (sn)' });
+      var satir = h('div', { class: 'set-satir' },
+        h('span', { class: 'set-no', text: 'Set ' + no }),
+        tekrar, h('span', { class: 'birim', text: 'tekrar' }),
+        agirlik, h('span', { class: 'birim', text: 'kg' }),
+        dinlenme, h('span', { class: 'birim', text: 'sn dinlenme' }),
+        h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', 'aria-label': 'Set ' + no + ' satırını sil',
+          onclick: function () { satir.remove(); yenidenNumarala(); } }));
+      satir._oku = function () {
+        var t = sayi(tekrar.value);
+        if (!(t > 0)) return null;
+        var s = { tekrar: t };
+        var a = sayi(agirlik.value); if (a > 0) s.agirlik_kg = a;
+        var d = sayi(dinlenme.value); if (d > 0) s.dinlenme_sn = d;
+        return s;
+      };
+      satir._etiketGuncelle = function (n) { satir.querySelector('.set-no').textContent = 'Set ' + n; };
+      kap.appendChild(satir);
+    }
+    function yenidenNumarala() {
+      Array.prototype.forEach.call(kap.children, function (s, i) { s._etiketGuncelle(i + 1); });
+    }
+    (baslangic && baslangic.length ? baslangic : [null]).forEach(satirEkle);
+    return {
+      eleman: h('div', {}, kap,
+        h('button', { type: 'button', class: 'ikincil kucuk', text: '+ Set ekle',
+          onclick: function () {
+            var son = kap.lastElementChild;
+            var onceki = son ? son._oku() : null;
+            satirEkle(onceki);
+          } })),
+      oku: function () {
+        return Array.prototype.map.call(kap.children, function (s) { return s._oku(); }).filter(Boolean);
+      }
+    };
+  }
+
+  /* Hareket seçme penceresi: ara/kategori filtrele → seç → set gir → geri çağır. */
+  function hareketSecPenceresi(baslikMetni, secildi) {
+    var dlg = doc.getElementById('secici');
+    dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
+    var q = '', kat = '';
+    function ust(metin) {
+      return h('div', { class: 'd-ust' }, h('h2', { text: metin }),
+        h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } }));
+    }
+    function adim1() {
+      var liste = h('div', { class: 'tablo-kap' });
+      function doldur() {
+        var res = Exercises.search(q, kat ? { kategori: kat } : undefined).slice(0, 80);
+        liste.textContent = '';
+        if (!res.length) { liste.appendChild(h('p', { class: 'bos', text: 'Bu kategoride/aramada hareket bulunamadı.' })); return; }
+        var tb = h('tbody');
+        res.forEach(function (e) {
+          tb.appendChild(h('tr', { class: 'satir', tabindex: 0, onclick: function () { adim2(e); },
+              onkeydown: function (ev) { if (ev.key === 'Enter') adim2(e); } },
+            h('td', { class: 'ad' }, e.ad, e.kendi ? h('span', { class: 'etiket kendi-etiket', text: 'kendi hareketim' }) : null),
+            h('td', {}, h('span', { class: 'etiket', text: e.kategori }))));
+        });
+        liste.appendChild(h('table', {}, tb));
+      }
+      var arama = h('input', { type: 'search', placeholder: 'Hareket ara…', 'aria-label': 'Hareket ara', value: q,
+        oninput: function (ev) { q = ev.target.value; doldur(); } });
+      var katSec = h('select', { 'aria-label': 'Kategori', onchange: function (ev) { kat = ev.target.value; doldur(); } },
+        h('option', { value: '', text: 'Tüm kategoriler' }));
+      hareketKategorilerSirali().forEach(function (k) {
+        var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
+      });
+      dlg.textContent = '';
+      dlg.appendChild(ust(baslikMetni));
+      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec), liste));
+      doldur();
+      if (!dlg.open) dlg.showModal();
+      arama.focus();
+    }
+    function adim2(hareket) {
+      var setler = setDuzenleyici(null);
+      var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+      dlg.textContent = '';
+      dlg.appendChild(ust(hareket.ad));
+      dlg.appendChild(h('div', { class: 'd-govde' },
+        h('p', { class: 'aciklama', text: 'Her set için tekrar sayısı zorunlu; ağırlık ve dinlenme süresi isteğe bağlıdır.' }),
+        setler.eleman,
+        h('div', { class: 'araclar' },
+          h('button', { type: 'button', text: 'Antrenmana ekle', onclick: function () {
+            var sl = setler.oku();
+            if (!sl.length) { durum.textContent = 'En az bir set girin (tekrar sayısı sıfırdan büyük olmalı).'; durum.className = 'durum hata'; return; }
+            secildi(hareket, sl);
+          } }),
+          h('button', { type: 'button', class: 'ikincil', text: '‹ Geri', onclick: adim1 })),
+        durum));
+    }
+    adim1();
+  }
+
+  /* Kendi hareketim ekle/düzenle */
+  function kendiHareketAc(mevcut, bitince) {
+    var dlg = doc.getElementById('secici');
+    dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
+    var ad = h('input', { type: 'text', value: mevcut ? mevcut.ad : '', placeholder: 'Örn. Trap Bar Deadlift', 'aria-label': 'Hareket adı' });
+    var kat = h('select', { 'aria-label': 'Kategori' });
+    hareketKategorilerSirali().forEach(function (k) {
+      var o = h('option', { value: k, text: k }); if (mevcut && mevcut.kategori === k) o.selected = true; kat.appendChild(o);
+    });
+    if (!mevcut) kat.value = 'Tüm vücut/Fonksiyonel';
+    var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+    function kaydet() {
+      var a = ad.value.trim();
+      if (!a) { durum.textContent = 'Hareket adı boş olamaz.'; durum.className = 'durum hata'; ad.focus(); return; }
+      var kayit = { id: mevcut ? mevcut.id : 'k-' + yeniId(), ad: a, kategori: kat.value };
+      Storage.putOzelHareket(kayit).then(hareketListesiniTazele)
+        .then(function () { dlg.close(); if (bitince) bitince(kayit); })
+        .catch(function (e) { durum.textContent = 'Kaydedilemedi: ' + ((e && e.message) || e); durum.className = 'durum hata'; });
+    }
+    dlg.textContent = '';
+    dlg.appendChild(h('div', { class: 'd-ust' },
+      h('h2', { text: mevcut ? 'Hareketi düzenle' : 'Kendi hareketimi ekle' }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } })));
+    dlg.appendChild(h('div', { class: 'd-govde' },
+      h('div', { class: 'form-satir' }, h('label', { class: 'genis' }, 'Hareket adı ', ad), h('label', {}, 'Kategori ', kat)),
+      h('div', { class: 'araclar' },
+        h('button', { type: 'button', text: mevcut ? 'Değişiklikleri kaydet' : 'Hareketi kaydet', onclick: kaydet }),
+        h('button', { type: 'button', class: 'ikincil', text: 'Vazgeç', onclick: function () { dlg.close(); } })),
+      durum));
+    dlg.showModal();
+    ad.focus();
+  }
+
+  function kendiHareketSil(e) {
+    Storage.tumAntrenman().then(function (kayitlar) {
+      var kullanim = kayitlar.filter(function (k) { return k.hareket_id === e.id; }).length;
+      var mesaj = '"' + e.ad + '" kalıcı olarak silinecek.';
+      if (kullanim) mesaj += '\n\nBu hareket ' + kullanim + ' antrenman kaydında kullanılmış. Kayıtlar silinmez ama hareket "Bilinmeyen hareket" olarak görünür.';
+      mesaj += '\n\nDevam edilsin mi?';
+      if (!root.confirm(mesaj)) return;
+      Storage.deleteOzelHareket(e.id).then(hareketListesiniTazele).then(function () {
+        if (aktifSayfa === 'spor') sporSayfasi();
+        uyar('"' + e.ad + '" silindi.');
+      });
+    });
+  }
+
+  /* Favori antrenmanlar: bugünün antrenmanını adla kaydet, ya da kayıtlı birini seçili güne uygula. */
+  function favoriAntrenmanAc(gunlukHareketler) {
+    var dlg = doc.getElementById('secici');
+    dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
+    var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+
+    function ciz() {
+      Storage.listFavoriAntrenman().then(function (liste) {
+        liste.sort(function (a, b) { return a.ad.localeCompare(b.ad, 'tr'); });
+        var govde = h('div', { class: 'd-govde' });
+
+        if (gunlukHareketler && gunlukHareketler.length) {
+          var adInp = h('input', { type: 'text', value: '', placeholder: 'Örn. İtme günü', 'aria-label': 'Favori adı' });
+          govde.appendChild(h('section', { class: 'panel' },
+            h('h3', { text: 'Bugünün antrenmanını favori olarak kaydet' }),
+            h('p', { class: 'aciklama', text: gunlukHareketler.length + ' hareket' }),
+            h('div', { class: 'form-satir' },
+              h('label', { class: 'genis' }, 'Favori adı ', adInp),
+              h('button', { type: 'button', text: 'Kaydet', onclick: function () {
+                var a = adInp.value.trim();
+                if (!a) { durum.textContent = 'Favori adı boş olamaz.'; durum.className = 'durum hata'; return; }
+                var kayit = {
+                  id: 'fa-' + yeniId(), ad: a,
+                  hareketler: gunlukHareketler.map(function (x) { return { hareket_id: x.hareket_id, setler: x.setler }; })
+                };
+                Storage.putFavoriAntrenman(kayit).then(function () {
+                  durum.textContent = '"' + a + '" favorilere kaydedildi.'; durum.className = 'durum';
+                  ciz();
+                });
+              } }))));
+        }
+
+        var kap = h('section', { class: 'panel' }, h('h3', { text: 'Kayıtlı favori antrenmanlar' }));
+        if (!liste.length) {
+          kap.appendChild(h('p', { class: 'not', text: 'Henüz favori antrenman yok.' }));
+        } else {
+          var tb = h('tbody');
+          liste.forEach(function (f) {
+            var gecerli = f.hareketler.filter(function (x) { return Exercises.BY_ID[x.hareket_id]; });
+            var eksik = f.hareketler.length - gecerli.length;
+            tb.appendChild(h('tr', {},
+              h('td', { class: 'ad', text: f.ad }),
+              h('td', { class: 'sayi', text: gecerli.length + ' hareket' }),
+              h('td', {}, h('span', { class: 'satir-dugme' },
+                h('button', { type: 'button', class: 'kucuk', text: 'Bu güne ekle', onclick: function () {
+                  if (!gecerli.length) { durum.textContent = 'Bu favorideki hareketler artık listede yok.'; durum.className = 'durum hata'; return; }
+                  var simdi = new Date();
+                  Promise.all(gecerli.map(function (x) {
+                    return Storage.putAntrenman({ id: yeniId(), tarih: gun.tarih, hareket_id: x.hareket_id, setler: x.setler,
+                      saat: pad(simdi.getHours()) + ':' + pad(simdi.getMinutes()) });
+                  })).then(function () {
+                    dlg.close(); sporSayfasi();
+                    uyar('"' + f.ad + '" eklendi (' + gecerli.length + ' hareket' + (eksik ? ', ' + eksik + ' hareket bulunamadı' : '') + ').');
+                  });
+                } }),
+                h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', 'aria-label': 'Favoriyi sil: ' + f.ad,
+                  onclick: function () {
+                    if (!root.confirm('"' + f.ad + '" favorisi silinsin mi?')) return;
+                    Storage.deleteFavoriAntrenman(f.id).then(function () { durum.textContent = '"' + f.ad + '" silindi.'; durum.className = 'durum'; ciz(); });
+                  } })))));
+          });
+          kap.appendChild(h('div', { class: 'tablo-kap' }, h('table', {}, tb)));
+        }
+        govde.appendChild(kap);
+        govde.appendChild(durum);
+
+        dlg.textContent = '';
+        dlg.appendChild(h('div', { class: 'd-ust' }, h('h2', { text: 'Favori antrenmanlar' }),
+          h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } })));
+        dlg.appendChild(govde);
+        if (!dlg.open) dlg.showModal();
+      });
+    }
+    ciz();
+  }
+
+  function sporSayfasi() {
+    if (!gun.tarih) gun.tarih = yerelTarih(new Date());
+    var sira = ++gun.sira;
+    Promise.all([Storage.listAntrenmanByDate(gun.tarih)]).then(function (r) {
+      if (sira === gun.sira && aktifSayfa === 'spor') sporCiz(r[0]);
+    }).catch(function (e) { if (aktifSayfa === 'spor') hataGoster(e); });
+  }
+
+  function antrenmanEkle(hareket, setler) {
+    var simdi = new Date();
+    Storage.putAntrenman({ id: yeniId(), tarih: gun.tarih, hareket_id: hareket.id, setler: setler,
+      saat: pad(simdi.getHours()) + ':' + pad(simdi.getMinutes()) }).then(function () {
+      doc.getElementById('secici').close();
+      sporSayfasi();
+    });
+  }
+
+  function sporCiz(kayitlar) {
+    var bugun = yerelTarih(new Date());
+    var sayfa = h('div');
+
+    sayfa.appendChild(h('h1', { text: 'Spor' }));
+    sayfa.appendChild(h('p', { class: 'alt-baslik', text: gun.tarih === bugun ? 'Bugünkü antrenman' : tarihMetni(gun.tarih) + ' antrenmanı' }));
+
+    var tarihGirdisi = h('input', { type: 'date', value: gun.tarih, 'aria-label': 'Tarih',
+      onchange: function (e) { if (e.target.value) { gun.tarih = e.target.value; sporSayfasi(); } } });
+    sayfa.appendChild(h('div', { class: 'araclar' },
+      h('button', { type: 'button', class: 'ikincil', 'aria-label': 'Önceki gün', text: '‹ Önceki', onclick: function () { gun.tarih = tarihKaydir(gun.tarih, -1); sporSayfasi(); } }),
+      tarihGirdisi,
+      h('button', { type: 'button', class: 'ikincil', 'aria-label': 'Sonraki gün', text: 'Sonraki ›', onclick: function () { gun.tarih = tarihKaydir(gun.tarih, 1); sporSayfasi(); } }),
+      gun.tarih === bugun ? null : h('button', { type: 'button', text: 'Bugüne dön', onclick: function () { gun.tarih = bugun; sporSayfasi(); } })));
+
+    sayfa.appendChild(h('div', { class: 'araclar' },
+      h('button', { type: 'button', text: '+ Hareket ekle', onclick: function () { hareketSecPenceresi(tarihMetni(gun.tarih) + ' — hareket ekle', antrenmanEkle); } }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Favori antrenmanlar', onclick: function () { favoriAntrenmanAc(kayitlar); } }),
+      h('button', { type: 'button', class: 'ikincil', text: '+ Kendi hareketim', onclick: function () { kendiHareketAc(null, function (h) { uyar('"' + h.ad + '" kaydedildi.'); }); } })));
+
+    if (!kayitlar.length) {
+      sayfa.appendChild(h('p', { class: 'bos', text: 'Bu güne henüz hareket eklenmedi.' }));
+    } else {
+      kayitlar.forEach(function (k) {
+        var e = Exercises.BY_ID[k.hareket_id];
+        var toplamTekrar = k.setler.reduce(function (a, s) { return a + s.tekrar; }, 0);
+        var tb = h('tbody');
+        k.setler.forEach(function (s, i) {
+          tb.appendChild(h('tr', {},
+            h('td', { text: 'Set ' + (i + 1) }),
+            h('td', { class: 'sayi', text: s.tekrar + ' tekrar' }),
+            h('td', { class: 'sayi', text: s.agirlik_kg != null ? Calc.fmt(s.agirlik_kg, 'kg') + ' kg' : '—' }),
+            h('td', { class: 'sayi', text: s.dinlenme_sn != null ? s.dinlenme_sn + ' sn' : '—' })));
+        });
+        var kart = h('div', { class: 'hareket-kart' },
+          h('div', { class: 'hareket-ust' },
+            h('h3', {}, e ? e.ad : 'Bilinmeyen hareket (veritabanında yok)', ' ',
+              h('span', { class: 'etiket', text: (e ? e.kategori : '') }), ' ',
+              h('span', { class: 'kcal-etiket', text: k.setler.length + ' set · ' + toplamTekrar + ' tekrar' })),
+            h('div', { class: 'satir-dugme' },
+              h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', 'aria-label': 'Antrenman kaydını sil',
+                onclick: function () { if (root.confirm('Bu kayıt silinsin mi?')) Storage.deleteAntrenman(k.id).then(sporSayfasi); } }))),
+          h('table', { class: 'set-ozet-tablo' },
+            h('thead', {}, h('tr', {}, h('th', { text: 'Set' }), h('th', { class: 'sayi', text: 'Tekrar' }),
+              h('th', { class: 'sayi', text: 'Ağırlık' }), h('th', { class: 'sayi', text: 'Dinlenme' }))),
+            tb));
+        sayfa.appendChild(kart);
+      });
+    }
+
+    /* Kendi hareketlerim: yalnızca varsa göster, düzenle/sil imkânıyla */
+    Storage.listOzelHareket().then(function (ozel) {
+      if (aktifSayfa !== 'spor' || !ozel.length) return;
+      var panel = h('section', { class: 'panel' }, h('h2', { text: 'Kendi hareketlerim' }));
+      var tb = h('tbody');
+      ozel.slice().sort(function (a, b) { return a.ad.localeCompare(b.ad, 'tr'); }).forEach(function (o) {
+        tb.appendChild(h('tr', {},
+          h('td', { class: 'ad', text: o.ad }),
+          h('td', {}, h('span', { class: 'etiket', text: o.kategori })),
+          h('td', {}, h('span', { class: 'satir-dugme' },
+            h('button', { type: 'button', class: 'ikincil kucuk', text: 'Düzenle', onclick: function () { kendiHareketAc(o, function () { if (aktifSayfa === 'spor') sporSayfasi(); }); } }),
+            h('button', { type: 'button', class: 'ikincil kucuk', text: 'Sil', onclick: function () { kendiHareketSil(o); } })))));
+      });
+      panel.appendChild(h('div', { class: 'tablo-kap' }, h('table', {}, tb)));
+      sayfa.appendChild(panel);
+    });
+
+    content.textContent = '';
+    content.appendChild(sayfa);
+  }
+
   /* ---------- Yönlendirme ---------- */
   var SAYFALAR = {
     besinler: besinlerSayfasi,
     bugun: bugunSayfasi,
     gecmis: gecmisSayfasi,
     grafikler: grafiklerSayfasi,
+    spor: sporSayfasi,
     hedefler: hedeflerSayfasi,
     ayarlar: ayarlarSayfasi
   };
@@ -1605,6 +1981,10 @@
       return r;
     });
   }
+  /* Kendi hareketleri depodan okuyup hareket arama listesine karıştırır. */
+  function hareketListesiniTazele() {
+    return Storage.listOzelHareket().then(function (r) { Exercises.guncelle(r); return r; });
+  }
 
   var baslatildi = false;
   function baslat() {
@@ -1636,7 +2016,7 @@
 
   Storage.open().then(function (ok) {
     if (!ok) uyar(Storage.sonHata || 'Kalıcı depolama açılamadı: veriler yalnızca bu oturumda tutulacak. Tarayıcı ayarlarını kontrol edin.');
-    return Promise.all([Storage.listFavorites(), Storage.listRecents(), temaBaslat(), besinListesiniTazele()]);
+    return Promise.all([Storage.listFavorites(), Storage.listRecents(), temaBaslat(), besinListesiniTazele(), hareketListesiniTazele()]);
   }).then(function (r) {
     state.favs = new Set(r[0]); state.recents = r[1];
   }).catch(function (e) {

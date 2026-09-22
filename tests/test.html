@@ -12,6 +12,8 @@
 <script src="../js/calc.js"></script>
 <script src="../js/foods-data.js"></script>
 <script src="../js/foods.js"></script>
+<script src="../js/exercises-data.js"></script>
+<script src="../js/exercises.js"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/backup.js"></script>
 <script src="../js/rda.js"></script>
@@ -95,7 +97,47 @@
   t('Göç: v1 yedeği (log yok) güncel sürüme yükseltilir', v1.ok && v1.veri.schemaVersion === S2 && Array.isArray(v1.veri.log) && v1.veri.log.length === 0);
   var v2 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 2, log: [{ id: 'z1', tarih: '2026-09-22', ogun: 'öğle', besin_id: 'h-bal', miktar_g: 20 }] }, S2);
   t('Göç: v2 yedeği kayıp olmadan güncel sürüme yükseltilir', v2.ok && v2.veri.schemaVersion === S2 && v2.veri.log.length === 1 && v2.veri.log[0].miktar_g === 20);
-  t('Şema sürümü 4 (kendi besin, tarif, favori öğün depoları)', S2 === 4);
+  t('Şema sürümü 5 (su, kendi hareket, antrenman günlüğü, favori antrenman depoları)', S2 === 5);
+
+  /* --- Yedekleme: su / hareket / antrenman / favori antrenman (şema 5) --- */
+  var ornek5 = {
+    suKayitlari: [{ id: 's1', tarih: '2026-09-22', ml: 200, saat: '09:00' }],
+    ozelHareketler: [{ id: 'e-1', ad: 'Trap Bar Deadlift', kategori: 'Bacak' }],
+    antrenmanGunlugu: [{ id: 'a-1', tarih: '2026-09-22', hareket_id: 'e-squat-barbell',
+      setler: [{ tekrar: 10 }, { tekrar: 8, agirlik_kg: 60, dinlenme_sn: 90 }], saat: '18:00' }],
+    favoriAntrenmanlar: [{ id: 'fa-1', ad: 'Bacak günü', hareketler: [{ hareket_id: 'e-squat-barbell', setler: [{ tekrar: 10 }] }] }]
+  };
+  var p5 = Backup.paketle(ornek5, S2);
+  t('Yedek: su/hareket/antrenman/favori antrenman pakete girer',
+    p5.suKayitlari.length === 1 && p5.ozelHareketler.length === 1 && p5.antrenmanGunlugu.length === 1 && p5.favoriAntrenmanlar.length === 1);
+  var d5 = Backup.dogrula(JSON.parse(JSON.stringify(p5)), S2);
+  t('Yedek: şema 5 paketi doğrulanır', d5.ok && d5.veri.antrenmanGunlugu[0].setler.length === 2);
+  var v4 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 4, log: [] }, S2);
+  t('Göç: v4 yedeği v5e yükseltilir, yeni bölümler boş dizi olur',
+    v4.ok && v4.veri.schemaVersion === S2 && v4.veri.suKayitlari.length === 0 && v4.veri.antrenmanGunlugu.length === 0);
+
+  function boz5(bolum, degis) { var c = JSON.parse(JSON.stringify(p5)); degis(c[bolum][0]); return Backup.dogrula(c, S2).ok; }
+  t('Bozuk: su kaydında geçersiz tarih', !boz5('suKayitlari', function (s) { s.tarih = '2026-13-01'; }));
+  t('Bozuk: su kaydında negatif ml', !boz5('suKayitlari', function (s) { s.ml = -50; }));
+  t('Bozuk: kendi hareket adı yok', !boz5('ozelHareketler', function (e) { e.ad = ''; }));
+  t('Bozuk: antrenmanda set listesi boş', !boz5('antrenmanGunlugu', function (a) { a.setler = []; }));
+  t('Bozuk: antrenmanda set tekrarı sıfır', !boz5('antrenmanGunlugu', function (a) { a.setler[0].tekrar = 0; }));
+  t('Bozuk: antrenmanda hareket eksik', !boz5('antrenmanGunlugu', function (a) { delete a.hareket_id; }));
+  t('Bozuk: favori antrenmanda hareket listesi boş', !boz5('favoriAntrenmanlar', function (f) { f.hareketler = []; }));
+
+  /* --- Hareket veritabanı (Exercises) --- */
+  var eIds = {}, eDup = [];
+  Exercises.ALL.forEach(function (e) { if (eIds[e.id]) eDup.push(e.ad); eIds[e.id] = 1; });
+  t('Hareketler: tüm kimlikler benzersiz' + (eDup.length ? ' (çakışan: ' + eDup.join(', ') + ')' : ''), eDup.length === 0);
+  t('Hareketler: en az 60 hazır hareket var (şu an ' + Exercises.ALL.length + ')', Exercises.ALL.length >= 60);
+  t('Hareketler: arama "squat" bulur', Exercises.search('squat').length > 0);
+  t('Hareketler: Türkçe karakter toleranslı arama ("gogus" -> Göğüs kategorisi)', Exercises.search('', { kategori: 'Göğüs' }).length > 0);
+  t('Hareketler: kategori filtresi doğru çalışır', Exercises.search('', { kategori: 'Bacak' }).every(function (e) { return e.kategori === 'Bacak'; }));
+  var oncekiHareketSayisi = Exercises.ALL.length;
+  Exercises.guncelle([{ id: 'k-test', ad: 'Test Hareketi', kategori: 'Diğer' }]);
+  t('Hareketler: kendi hareket eklenince listeye girer', Exercises.ALL.length === oncekiHareketSayisi + 1 && !!Exercises.BY_ID['k-test']);
+  Exercises.guncelle([]);
+  t('Hareketler: liste geri alınır (hazır hareketler bozulmaz)', Exercises.ALL.length === oncekiHareketSayisi && !Exercises.BY_ID['k-test']);
 
   var csv = Backup.csv(ornek.log, Foods.BY_ID);
   var satirlar = csv.replace('﻿', '').trim().split('\r\n');
@@ -138,8 +180,8 @@
   var d4 = Backup.dogrula(JSON.parse(JSON.stringify(p4)), S2);
   t('Yedek: şema 4 paketi doğrulanır', d4.ok && d4.veri.tarifler[0].toplam_g === 250);
   var v3 = Backup.dogrula({ uygulama: 'besin-takip', schemaVersion: 3, log: [] }, S2);
-  t('Göç: v3 yedeği v4e yükseltilir, yeni bölümler boş dizi olur',
-    v3.ok && v3.veri.schemaVersion === 4 && v3.veri.ozelBesinler.length === 0 && v3.veri.tarifler.length === 0);
+  t('Göç: v3 yedeği güncel sürüme yükseltilir, yeni bölümler boş dizi olur',
+    v3.ok && v3.veri.schemaVersion === S2 && v3.veri.ozelBesinler.length === 0 && v3.veri.tarifler.length === 0);
 
   function boz4(bolum, degis) {
     var c = JSON.parse(JSON.stringify(p4));

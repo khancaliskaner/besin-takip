@@ -5,14 +5,17 @@
   /* Sürüm 2: 'log' deposu (öğün kayıtları) eklendi.
      Sürüm 3: 'log' deposunda eksik kalabilen 'tarih' dizini onarılır (v2'de depo dizinsiz oluşmuş olabilir).
      Sürüm 4: kullanıcının kendi besinleri, tarifleri ve favori öğünleri için üç yeni depo.
+     Sürüm 5: su kayıtları, hareket veritabanı (kendi hareketler), antrenman günlüğü, favori antrenmanlar.
      Açılışta eksik depo VE eksik dizin tamamlanır; mevcut kayıtlara dokunulmaz. */
-  var SCHEMA_VERSION = 4;
+  var SCHEMA_VERSION = 5;
   var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id',
-                 ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id' };
-  var INDEXES = { log: { tarih: 'tarih' } }; /* depo -> { dizin adı: anahtar yolu } */
+                 ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id',
+                 suKayitlari: 'id', ozelHareketler: 'id', antrenmanGunlugu: 'id', favoriAntrenmanlar: 'id' };
+  var INDEXES = { log: { tarih: 'tarih' }, suKayitlari: { tarih: 'tarih' }, antrenmanGunlugu: { tarih: 'tarih' } };
 
   var db = null;
-  var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {} };
+  var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {},
+                 suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {} };
   var kalici = false;
   var sonHata = null;
 
@@ -156,15 +159,39 @@
 
     putLog: function (kayit) { return put('log', kayit); },
     deleteLog: function (id) { return del('log', id); },
-    listLogByDate: function (tarih) {
-      function sug(liste) { return liste.filter(function (e) { return e.tarih === tarih; }); }
-      if (!kalici) {
-        return Promise.resolve(sug(Object.keys(memory.log).map(function (k) { return memory.log[k]; })));
-      }
-      /* Dizin beklenmedik şekilde yoksa sayfayı çökertme: tüm kayıtları okuyup süz. */
-      return tx('log', 'readonly', function (s) {
-        return s.indexNames.contains('tarih') ? s.index('tarih').getAll(tarih) : s.getAll();
-      }).then(function (r) { return sug(r || []); });
-    }
+    listLogByDate: function (tarih) { return byDate('log', tarih); },
+
+    /* Su kayıtları: {id, tarih, ml, saat} */
+    putSu: function (kayit) { return put('suKayitlari', kayit); },
+    deleteSu: function (id) { return del('suKayitlari', id); },
+    listSuByDate: function (tarih) { return byDate('suKayitlari', tarih); },
+
+    /* Kullanıcının kendi hareketleri: {id, ad, kategori} */
+    listOzelHareket: function () { return all('ozelHareketler'); },
+    putOzelHareket: function (h) { return put('ozelHareketler', h); },
+    deleteOzelHareket: function (id) { return del('ozelHareketler', id); },
+
+    /* Antrenman günlüğü: {id, tarih, hareket_id, setler:[{tekrar, agirlik_kg?, dinlenme_sn?}], saat?, not?} */
+    putAntrenman: function (kayit) { return put('antrenmanGunlugu', kayit); },
+    deleteAntrenman: function (id) { return del('antrenmanGunlugu', id); },
+    listAntrenmanByDate: function (tarih) { return byDate('antrenmanGunlugu', tarih); },
+    tumAntrenman: function () { return all('antrenmanGunlugu'); },
+
+    /* Favori antrenmanlar: {id, ad, hareketler:[{hareket_id, setler:[{tekrar, agirlik_kg?, dinlenme_sn?}]}]} */
+    listFavoriAntrenman: function () { return all('favoriAntrenmanlar'); },
+    putFavoriAntrenman: function (f) { return put('favoriAntrenmanlar', f); },
+    deleteFavoriAntrenman: function (id) { return del('favoriAntrenmanlar', id); }
   };
+
+  /* Tarih dizinli bir depodan tek günün kayıtlarını döndürür. Dizin beklenmedik şekilde
+     yoksa sayfayı çökertme: tüm kayıtları okuyup süz. */
+  function byDate(store, tarih) {
+    function sug(liste) { return liste.filter(function (e) { return e.tarih === tarih; }); }
+    if (!kalici) {
+      return Promise.resolve(sug(Object.keys(memory[store]).map(function (k) { return memory[store][k]; })));
+    }
+    return tx(store, 'readonly', function (s) {
+      return s.indexNames.contains('tarih') ? s.index('tarih').getAll(tarih) : s.getAll();
+    }).then(function (r) { return sug(r || []); });
+  }
 })(typeof window !== 'undefined' ? window : globalThis);
