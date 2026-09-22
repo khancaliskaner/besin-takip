@@ -2,8 +2,9 @@
    Yalnızca statik kod dosyalarını önbelleğe alır — kullanıcı verisi (IndexedDB)
    bu dosyanın kapsamı dışındadır, hiçbir zaman buradan geçmez veya gönderilmez.
    Sürüm değiştikçe CACHE_ADI güncellenmeli (besin-takip.html'deki ?v= ile birlikte). */
-var CACHE_ADI = 'besin-takip-v0.13.0';
+var CACHE_ADI = 'besin-takip-v0.13.1';
 var ONBELLEGE_ALINACAKLAR = [
+  './index.html',
   './besin-takip.html',
   './css/style.css',
   './js/nutrients.js',
