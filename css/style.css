@@ -266,3 +266,23 @@ details.deger-grup summary { cursor: pointer; font-weight: 600; font-size: 14px;
 .set-ozet-tablo { width: 100%; border-collapse: collapse; font-size: 13px; }
 .set-ozet-tablo th, .set-ozet-tablo td { padding: 5px 10px 5px 0; text-align: left; color: var(--soluk); border-bottom: none; }
 .set-ozet-tablo td.sayi, .set-ozet-tablo th.sayi { text-align: right; font-variant-numeric: tabular-nums; color: var(--metin); }
+
+/* Gün çizelgesi (Bugün sayfası): haftalık şerit + tamamlama işareti.
+   "Tamamlandı" tamamen kullanıcının kararıdır, otomatik hesaplanmaz. */
+.gun-tik-baslik { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 10px; vertical-align: middle; background: var(--durum-iyi); color: #fff; border-radius: 50%; font-size: 14px; line-height: 1; }
+.gun-tik-satir { width: 17px; height: 17px; font-size: 10px; margin-left: 8px; }
+.gun-cizelge-satir { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.gun-cizelge { display: flex; gap: 7px; flex-wrap: wrap; }
+.gun-hucre { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 48px; padding: 7px 4px 8px; background: var(--panel); border: 1px solid var(--cizgi); border-radius: 10px; cursor: pointer; box-shadow: none; transition: background var(--gecis), border-color var(--gecis), transform var(--gecis); }
+.gun-hucre:hover { border-color: var(--vurgu); transform: translateY(-1px); box-shadow: var(--golge-1); }
+.gun-hucre-gun { font-size: 10.5px; color: var(--soluk); text-transform: uppercase; letter-spacing: 0.03em; }
+.gun-hucre-no { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gun-hucre.bugun { box-shadow: inset 0 0 0 1.5px var(--vurgu); }
+.gun-hucre.secili { background: var(--vurgu); border-color: var(--vurgu); }
+.gun-hucre.secili .gun-hucre-gun { color: var(--vurgu-metin); opacity: 0.8; }
+.gun-hucre.secili .gun-hucre-no { color: var(--vurgu-metin); }
+.gun-hucre.secili:hover { transform: none; box-shadow: var(--golge-2); }
+.gun-hucre-tik { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; background: var(--durum-iyi); color: #fff; border: 2px solid var(--bg); border-radius: 50%; font-size: 9px; line-height: 1; }
+.tamamla-buton.tamamlandi { background: color-mix(in srgb, var(--durum-iyi) 16%, var(--panel)); color: var(--durum-iyi); border: 1px solid color-mix(in srgb, var(--durum-iyi) 42%, transparent); box-shadow: none; font-weight: 600; }
+.tamamla-buton.tamamlandi:hover { background: color-mix(in srgb, var(--durum-iyi) 24%, var(--panel)); transform: none; }
+@media (max-width: 500px) { .gun-cizelge-satir { flex-direction: column; align-items: stretch; } .tamamla-buton { width: 100%; } }

@@ -346,11 +346,55 @@
   function bugunSayfasi() {
     if (!gun.tarih) gun.tarih = yerelTarih(new Date());
     var sira = ++gun.sira;
-    Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF), Storage.listSuByDate(gun.tarih)]).then(function (r) {
-      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2]);
+    Promise.all([Storage.listLogByDate(gun.tarih), Storage.getSetting('hedefler', VARSAYILAN_HEDEF),
+      Storage.listSuByDate(gun.tarih), Storage.listTamamlananGunler()]).then(function (r) {
+      if (sira === gun.sira && aktifSayfa === 'bugun') bugunCiz(r[0], r[1], r[2], r[3]);
     }).catch(function (e) { if (aktifSayfa === 'bugun') hataGoster(e); });
   }
   function yenile() { bugunSayfasi(); }
+
+  /* ---------- Gün çizelgesi: haftalık şerit + günü tamamlandı işaretleme ----------
+     "Tamamlandı" tamamen kullanıcının kendi kararı — belirli bir hedefe ulaşma şartı aranmaz.
+     Bir günü işaretlemek/kaldırmak kolayca geri alınabilir olduğu için onay istenmez. */
+  var HAFTA_GUN_KISA = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+  function haftaBaslangici(tarih) {
+    var d = new Date(tarih + 'T12:00:00');
+    var gunIndeksi = d.getDay(); /* 0=Pazar .. 6=Cumartesi */
+    d.setDate(d.getDate() + (gunIndeksi === 0 ? -6 : 1 - gunIndeksi)); /* o haftanın Pazartesi'sine git */
+    return yerelTarih(d);
+  }
+  function gunCizelgesi(tamamlananSet) {
+    var bugun = yerelTarih(new Date());
+    var baslangic = haftaBaslangici(gun.tarih);
+    var satir = h('div', { class: 'gun-cizelge', role: 'group', 'aria-label': 'Hafta gün çizelgesi' });
+    for (var i = 0; i < 7; i++) {
+      var t = tarihKaydir(baslangic, i);
+      var tamamlandi = tamamlananSet.has(t);
+      var secili = t === gun.tarih;
+      var bugunMu = t === bugun;
+      var gunNo = String(new Date(t + 'T12:00:00').getDate());
+      satir.appendChild(h('button', {
+        type: 'button',
+        class: 'gun-hucre' + (secili ? ' secili' : '') + (bugunMu ? ' bugun' : '') + (tamamlandi ? ' tamamlandi' : ''),
+        'aria-pressed': String(secili),
+        'aria-label': tarihMetni(t) + (bugunMu ? ' (bugün)' : '') + (tamamlandi ? ' — tamamlandı' : ''),
+        onclick: (function (tt) { return function () { gun.tarih = tt; yenile(); }; })(t)
+      },
+        h('span', { class: 'gun-hucre-gun', text: HAFTA_GUN_KISA[i] }),
+        h('span', { class: 'gun-hucre-no', text: gunNo }),
+        tamamlandi ? h('span', { class: 'gun-hucre-tik', 'aria-hidden': 'true', text: '✓' }) : null));
+    }
+    return satir;
+  }
+  function tamamlamaDugmesi(tamamlandi) {
+    return h('button', {
+      type: 'button', class: 'tamamla-buton' + (tamamlandi ? ' tamamlandi' : ' ikincil'),
+      'aria-pressed': String(tamamlandi),
+      onclick: function () {
+        (tamamlandi ? Storage.gunTamamlaKaldir(gun.tarih) : Storage.gunTamamlaIsaretle(gun.tarih)).then(yenile);
+      }
+    }, tamamlandi ? '✓ Gün tamamlandı' : 'Günü tamamlandı işaretle');
+  }
 
   function ilerlemeCubugu(ad, deger, hedef, birim, eksikSayisi) {
     var oran = hedef > 0 ? deger / hedef : 0;
@@ -396,12 +440,14 @@
     return panel;
   }
 
-  function bugunCiz(kayitlar, hedefler, suKayitlari) {
+  function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe) {
     var bugun = yerelTarih(new Date());
     var hs = hesapla(kayitlar);
+    var tamamlananSet = new Set(tamamlananListe.map(function (x) { return x.id; }));
     var sayfa = h('div');
 
-    sayfa.appendChild(h('h1', { text: gun.tarih === bugun ? 'Bugün' : tarihMetni(gun.tarih) }));
+    sayfa.appendChild(h('h1', { text: gun.tarih === bugun ? 'Bugün' : tarihMetni(gun.tarih) },
+      tamamlananSet.has(gun.tarih) ? h('span', { class: 'gun-tik-baslik', title: 'Gün tamamlandı', 'aria-label': 'Gün tamamlandı', text: '✓' }) : null));
     sayfa.appendChild(h('p', { class: 'alt-baslik', text: gun.tarih === bugun ? tarihMetni(gun.tarih) : 'Seçili gün' }));
 
     var tarihGirdisi = h('input', { type: 'date', value: gun.tarih, 'aria-label': 'Tarih',
@@ -411,6 +457,11 @@
       tarihGirdisi,
       h('button', { type: 'button', class: 'ikincil', 'aria-label': 'Sonraki gün', text: 'Sonraki ›', onclick: function () { gun.tarih = tarihKaydir(gun.tarih, 1); yenile(); } }),
       gun.tarih === bugun ? null : h('button', { type: 'button', text: 'Bugüne dön', onclick: function () { gun.tarih = bugun; yenile(); } })));
+
+    /* Gün çizelgesi: haftalık şerit + tamamlama işareti */
+    sayfa.appendChild(h('div', { class: 'gun-cizelge-satir' },
+      gunCizelgesi(tamamlananSet),
+      tamamlamaDugmesi(tamamlananSet.has(gun.tarih))));
 
     /* Günlük özet */
     var ozet = h('section', { class: 'panel', 'aria-label': 'Günlük özet' }, h('h2', { text: 'Günlük özet' }));
@@ -621,8 +672,10 @@
   /* ---------- Geçmiş ---------- */
   var gecmisAralik = 30;
   function gecmisSayfasi() {
-    Storage.tumLog().then(function (hepsi) {
+    Promise.all([Storage.tumLog(), Storage.listTamamlananGunler()]).then(function (r) {
       if (aktifSayfa !== 'gecmis') return;
+      var hepsi = r[0];
+      var tamamlananSet = new Set(r[1].map(function (x) { return x.id; }));
       var gunler = {};
       hepsi.forEach(function (k) { (gunler[k.tarih] = gunler[k.tarih] || []).push(k); });
       var tarihler = Object.keys(gunler).sort().reverse();
@@ -639,7 +692,8 @@
         var hs = hesapla(gunler[t]);
         var ac = function () { gun.tarih = t; root.location.hash = '#bugun'; };
         tb.appendChild(h('tr', { class: 'satir', tabindex: 0, onclick: ac, onkeydown: function (e) { if (e.key === 'Enter') ac(); } },
-          h('td', { class: 'ad', text: tarihMetni(t) }),
+          h('td', { class: 'ad' }, tarihMetni(t),
+            tamamlananSet.has(t) ? h('span', { class: 'gun-tik-baslik gun-tik-satir', title: 'Gün tamamlandı', 'aria-label': 'tamamlandı', text: '✓' }) : null),
           h('td', { class: 'sayi', text: String(gunler[t].length) }),
           h('td', { class: 'sayi', text: Calc.fmt(hs.toplam.kcal, 'kcal') }),
           h('td', { class: 'sayi', text: Calc.fmt(hs.toplam.protein, 'g') }),

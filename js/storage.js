@@ -6,16 +6,18 @@
      Sürüm 3: 'log' deposunda eksik kalabilen 'tarih' dizini onarılır (v2'de depo dizinsiz oluşmuş olabilir).
      Sürüm 4: kullanıcının kendi besinleri, tarifleri ve favori öğünleri için üç yeni depo.
      Sürüm 5: su kayıtları, hareket veritabanı (kendi hareketler), antrenman günlüğü, favori antrenmanlar.
+     Sürüm 6: gün tamamlama işaretleri ('gunTamamlamalar' — kayıt anahtarı tarihin kendisi, ayrı dizin gerekmez).
      Açılışta eksik depo VE eksik dizin tamamlanır; mevcut kayıtlara dokunulmaz. */
-  var SCHEMA_VERSION = 5;
+  var SCHEMA_VERSION = 6;
   var STORES = { settings: 'key', favorites: 'id', recents: 'id', log: 'id',
                  ozelBesinler: 'id', tarifler: 'id', favoriOgunler: 'id',
-                 suKayitlari: 'id', ozelHareketler: 'id', antrenmanGunlugu: 'id', favoriAntrenmanlar: 'id' };
+                 suKayitlari: 'id', ozelHareketler: 'id', antrenmanGunlugu: 'id', favoriAntrenmanlar: 'id',
+                 gunTamamlamalar: 'id' };
   var INDEXES = { log: { tarih: 'tarih' }, suKayitlari: { tarih: 'tarih' }, antrenmanGunlugu: { tarih: 'tarih' } };
 
   var db = null;
   var memory = { settings: {}, favorites: {}, recents: {}, log: {}, ozelBesinler: {}, tarifler: {}, favoriOgunler: {},
-                 suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {} };
+                 suKayitlari: {}, ozelHareketler: {}, antrenmanGunlugu: {}, favoriAntrenmanlar: {}, gunTamamlamalar: {} };
   var kalici = false;
   var sonHata = null;
 
@@ -180,7 +182,17 @@
     /* Favori antrenmanlar: {id, ad, hareketler:[{hareket_id, setler:[{tekrar, agirlik_kg?, dinlenme_sn?}]}]} */
     listFavoriAntrenman: function () { return all('favoriAntrenmanlar'); },
     putFavoriAntrenman: function (f) { return put('favoriAntrenmanlar', f); },
-    deleteFavoriAntrenman: function (id) { return del('favoriAntrenmanlar', id); }
+    deleteFavoriAntrenman: function (id) { return del('favoriAntrenmanlar', id); },
+
+    /* Gün tamamlama: {id: tarih, tamamlandi: true, zaman}. Anahtar tarihin kendisi olduğu için
+       ayrı dizine gerek yok; tek günün durumu doğrudan anahtarla okunur. */
+    listTamamlananGunler: function () { return all('gunTamamlamalar'); },
+    gunTamamlandiMi: function (tarih) {
+      if (!kalici) return Promise.resolve(!!memory.gunTamamlamalar[tarih]);
+      return tx('gunTamamlamalar', 'readonly', function (s) { return s.get(tarih); }).then(function (r) { return !!r; });
+    },
+    gunTamamlaIsaretle: function (tarih) { return put('gunTamamlamalar', { id: tarih, tamamlandi: true, zaman: new Date().toISOString() }); },
+    gunTamamlaKaldir: function (tarih) { return del('gunTamamlamalar', tarih); }
   };
 
   /* Tarih dizinli bir depodan tek günün kayıtlarını döndürür. Dizin beklenmedik şekilde

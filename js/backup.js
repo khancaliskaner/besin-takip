@@ -4,7 +4,7 @@
   var OGUNLER = ['kahvaltı', 'öğle', 'akşam', 'ara öğün', 'özel'];
   var MAKS_BOYUT = 50 * 1024 * 1024;
   var BOLUMLER = ['settings', 'favorites', 'recents', 'log', 'ozelBesinler', 'tarifler', 'favoriOgunler',
-                   'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar'];
+                   'suKayitlari', 'ozelHareketler', 'antrenmanGunlugu', 'favoriAntrenmanlar', 'gunTamamlamalar'];
 
   function gecerliTarih(s) {
     if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -32,8 +32,9 @@
     /* v2 -> v3: yalnızca IndexedDB'deki 'tarih' dizini onarıldı; yedek biçimi değişmedi. */
     /* v3 -> v4: kendi besinler, tarifler ve favori öğünler eklendi (eski yedeklerde yoktu). */
     /* v4 -> v5: su kayıtları, kendi hareketler, antrenman günlüğü, favori antrenmanlar eklendi. */
+    /* v5 -> v6: gün tamamlama işaretleri eklendi. */
     BOLUMLER.forEach(function (k) { if (k !== 'settings' && !Array.isArray(data[k])) data[k] = []; });
-    data.schemaVersion = Math.max(v, hedefSurum || 5);
+    data.schemaVersion = Math.max(v, hedefSurum || 6);
     return data;
   }
 
@@ -177,6 +178,15 @@
         if (!hl || typeof hl.hareket_id !== 'string' || !hl.hareket_id) return hata('Favori antrenman ' + fa_n + ': hareket eksik.');
         if (!setlerGecerliMi(hl.setler)) return hata('Favori antrenman ' + fa_n + ': set listesi geçersiz.');
       }
+    }
+    /* Gün tamamlama: anahtar tarihin kendisi (id), yinelenen tarih olamaz */
+    var gtids = {};
+    for (i = 0; i < d.gunTamamlamalar.length; i++) {
+      var gt = d.gunTamamlamalar[i], gt_n = i + 1;
+      if (!gt || typeof gt.id !== 'string' || !gecerliTarih(gt.id)) return hata('Gün tamamlama ' + gt_n + ': geçersiz tarih.');
+      if (gtids[gt.id]) return hata('Gün tamamlama ' + gt_n + ': aynı tarih iki kez var.');
+      gtids[gt.id] = 1;
+      if (gt.tamamlandi !== true) return hata('Gün tamamlama ' + gt_n + ': geçersiz durum.');
     }
     return { ok: true, veri: d };
   }
