@@ -49,6 +49,18 @@
   t('Arama "ekmek kepek yok" -> boş', Foods.search('zzzz').length === 0);
   t('Kategori filtresi çalışır', Foods.search('', { kategori: 'Meyve' }).every(function (f) { return f.kategori === 'Meyve'; }));
 
+  /* --- Barkod --- */
+  Foods.guncelle([{ id: 'k-bt1', ad: 'Barkodlu test besini', varsayilan_g: 100, porsiyonlar: [], degerler: { kcal: 100 }, barkod: '8690000000001' }], []);
+  t('Kendi besin barkodu Foods.ALL üzerinden okunabilir', Foods.BY_ID['k-bt1'].barkod === '8690000000001');
+  t('Foods.barkodBul kayıtlı barkodu bulur', Foods.barkodBul('8690000000001') && Foods.barkodBul('8690000000001').id === 'k-bt1');
+  t('Foods.barkodBul bilinmeyen barkodda null döner', Foods.barkodBul('0000000000000') === null);
+  t('Foods.barkodBul boş girdide null döner', Foods.barkodBul('') === null && Foods.barkodBul() === null);
+  t('Barkodsuz kendi besinde alan null kalır', (function () {
+    Foods.guncelle([{ id: 'k-bt2', ad: 'Barkodsuz test besini', varsayilan_g: 100, porsiyonlar: [], degerler: { kcal: 50 } }], []);
+    return Foods.BY_ID['k-bt2'].barkod === null;
+  })());
+  Foods.guncelle([], []); /* test verilerini temizle */
+
   /* --- Veri bütünlüğü --- */
   var ids = {}, dup = [];
   Foods.ALL.forEach(function (f) { if (ids[f.id]) dup.push(f.ad); ids[f.id] = 1; });
@@ -231,6 +243,16 @@
   t('Bozuk: kendi besinde ad yok', !boz4('ozelBesinler', function (b) { b.ad = '  '; }));
   t('Bozuk: kendi besinde kalori sayı değil', !boz4('ozelBesinler', function (b) { b.degerler.kcal = 'abc'; }));
   t('Bozuk: kendi besinde porsiyon gramı sıfır', !boz4('ozelBesinler', function (b) { b.porsiyonlar[0].g = 0; }));
+  t('Bozuk: kendi besinde barkod alanı sayı olamaz', !boz4('ozelBesinler', function (b) { b.barkod = 8690000000001; }));
+  t('Geçerli: kendi besinde barkod alanı isteğe bağlı (yoksa da geçerli)', (function () {
+    var c = JSON.parse(JSON.stringify(p4));
+    return Backup.dogrula(c, S2).ok;
+  })());
+  t('Geçerli: kendi besinde barkod metin olarak kabul edilir', (function () {
+    var c = JSON.parse(JSON.stringify(p4));
+    c.ozelBesinler[0].barkod = '8690000000001';
+    return Backup.dogrula(c, S2).ok;
+  })());
   t('Bozuk: tarifte bileşen listesi boş', !boz4('tarifler', function (x) { x.bilesenler = []; }));
   t('Bozuk: tarifte bileşen miktarı negatif', !boz4('tarifler', function (x) { x.bilesenler[0].gram = -5; }));
   t('Bozuk: tarifte toplam ağırlık sıfır', !boz4('tarifler', function (x) { x.toplam_g = 0; }));

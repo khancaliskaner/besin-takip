@@ -46,6 +46,7 @@
       varsayilan_g: b.varsayilan_g > 0 ? b.varsayilan_g : 100,
       porsiyonlar: (b.porsiyonlar || []).slice(),
       degerler: degerler,
+      barkod: b.barkod || null,
       _ara: root.Calc.norm(b.ad)
     };
   }
@@ -120,6 +121,14 @@
   var BY_ID = {};
   ALL.forEach(function (f) { BY_ID[f.id] = f; });
 
+  /* Barkod numarasına göre kendi besinler arasında arar (yalnızca kullanıcı kayıtlı barkodlar; hazır
+     veritabanında uydurma barkod yoktur). */
+  function barkodBul(kod) {
+    kod = String(kod || '').trim();
+    if (!kod) return null;
+    return ALL.filter(function (f) { return f.kendi; }).find(function (f) { return f.barkod === kod; }) || null;
+  }
+
   root.Foods = {
     ALL: ALL,
     BY_ID: BY_ID,
@@ -127,6 +136,7 @@
     guncelle: guncelle,
     slug: slug,
     tarifBesine: tarifBesine,
+    barkodBul: barkodBul,
     kategoriler: function () {
       var s = {};
       ALL.forEach(function (f) { s[f.kategori] = true; });

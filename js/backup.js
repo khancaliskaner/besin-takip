@@ -95,6 +95,7 @@
         var p = b.porsiyonlar[pi];
         if (!p || typeof p.ad !== 'string' || typeof p.g !== 'number' || !(p.g > 0)) return hata('Kendi besin ' + bn + ': porsiyon tanımı geçersiz.');
       }
+      if (b.barkod != null && typeof b.barkod !== 'string') return hata('Kendi besin ' + bn + ': barkod alanı geçersiz.');
     }
     /* Tarifler: en az bir bileşen, pozitif toplam ağırlık */
     var tids = {};

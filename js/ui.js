@@ -227,7 +227,8 @@
     content.appendChild(h('div', { class: 'araclar' }, arama, kat, sekmeler,
       h('button', { type: 'button', text: '+ Kendi besinim', onclick: function () { kendiBesinAc(null, besinKaydedildi); } }),
       h('button', { type: 'button', class: 'ikincil', text: '+ Tarif oluştur', onclick: function () { tarifAc(null, besinKaydedildi); } }),
-      h('button', { type: 'button', class: 'ikincil', text: 'Besin karşılaştır', onclick: besinKarsilastirmaPenceresi })));
+      h('button', { type: 'button', class: 'ikincil', text: 'Besin karşılaştır', onclick: besinKarsilastirmaPenceresi }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Barkod tara', onclick: barkodAra })));
     content.appendChild(h('div', { class: 'tablo-kap' }, tablo));
     content.appendChild(sayac);
     listeyiYenile();
@@ -324,6 +325,151 @@
     if (besinler.some(function (f) { return !f.dogrulandi; })) {
       content.appendChild(h('p', { class: 'not', text: 'Listedeki bazı besinlerin değerleri yaklaşıktır ve henüz doğrulanmamıştır.' }));
     }
+  }
+
+  /* ---------- Barkod tarama ----------
+     Tamamen çevrimdışı çalışır: tarayıcının yerleşik BarcodeDetector'ı ile kamera
+     görüntüsünden barkod okunur, kendi eklediğiniz besinler arasında aranır.
+     Program 525 hazır besin için uydurma barkod içermez (kaynağı doğrulanamayan
+     veri eklenmez). Barkod bulunamazsa, yalnızca kullanıcı isteyerek tıkladığında
+     Open Food Facts'e (internet) tek seferlik bir sorgu gönderilir; gönderilen
+     tek bilgi barkod numarasıdır, başka hiçbir veri paylaşılmaz. */
+
+  /* Kamera + BarcodeDetector ile tarama penceresi. Bulununca veya elle girilince
+     sonuc(kod) çağrılır ve pencere kapanır. Kamera/algılayıcı yoksa yalnızca elle
+     giriş sunulur. */
+  function barkodTaraPenceresi(sonuc) {
+    var dlg = doc.getElementById('secici');
+    var stream = null, dur = false;
+    function kapat() { dur = true; if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; } dlg.close(); }
+    dlg.onclick = function (e) { if (e.target === dlg) kapat(); };
+
+    var video = h('video', { autoplay: true, playsinline: true, muted: true, class: 'barkod-video' });
+    var kameraDurum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+    var elle = h('input', { type: 'text', inputmode: 'numeric', placeholder: 'Barkod numarasını elle girin', 'aria-label': 'Barkod (elle)' });
+    function ellegonder() {
+      var k = elle.value.trim();
+      if (!k) { kameraDurum.textContent = 'Barkod boş olamaz.'; kameraDurum.className = 'durum hata'; return; }
+      kapat(); sonuc(k);
+    }
+
+    dlg.textContent = '';
+    dlg.appendChild(h('div', { class: 'd-ust' }, h('h2', { text: 'Barkod tara' }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: kapat })));
+    dlg.appendChild(h('div', { class: 'd-govde' },
+      h('p', { class: 'aciklama', text: 'Kamerayla barkodu çerçeve içine getirin, ya da numarayı elle yazın. Tarama tamamen cihazınızda yapılır; hiçbir görüntü hiçbir yere gönderilmez.' }),
+      video, kameraDurum,
+      h('div', { class: 'form-satir' }, h('label', { class: 'genis' }, 'Elle giriş ', elle),
+        h('button', { type: 'button', text: 'Kullan', onclick: ellegonder }))));
+    dlg.showModal();
+
+    if (!root.BarcodeDetector) {
+      video.hidden = true;
+      kameraDurum.textContent = 'Bu tarayıcı kamera ile barkod okumayı desteklemiyor; numarayı elle girin.';
+      kameraDurum.className = 'durum';
+      elle.focus();
+      return;
+    }
+    if (!(root.navigator && root.navigator.mediaDevices && root.navigator.mediaDevices.getUserMedia)) {
+      video.hidden = true;
+      kameraDurum.textContent = 'Kameraya erişilemiyor; numarayı elle girin.';
+      kameraDurum.className = 'durum';
+      elle.focus();
+      return;
+    }
+    var detector = new root.BarcodeDetector({
+      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
+    });
+    root.navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function (s) {
+      if (dur) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      stream = s;
+      video.srcObject = s;
+      function dongu() {
+        if (dur) return;
+        detector.detect(video).then(function (barkodlar) {
+          if (dur) return;
+          if (barkodlar && barkodlar.length) { var kod = barkodlar[0].rawValue; kapat(); sonuc(kod); return; }
+          root.requestAnimationFrame(dongu);
+        }).catch(function () { if (!dur) root.requestAnimationFrame(dongu); });
+      }
+      dongu();
+    }).catch(function (e) {
+      video.hidden = true;
+      kameraDurum.textContent = 'Kameraya erişilemedi (' + ((e && e.message) || 'izin verilmedi') + '); numarayı elle girin.';
+      kameraDurum.className = 'durum hata';
+      elle.focus();
+    });
+  }
+
+  /* Open Food Facts'te tek seferlik, yalnızca barkod numarasıyla arama. Kullanıcının
+     bilgisi (e-posta, ad vb.) hiçbir zaman gönderilmez. Yalnızca kullanıcı açıkça
+     "İnternet gerekir" düğmesine tıkladığında çağrılır. */
+  function openFoodFactsAra(kod) {
+    var url = 'https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(kod) +
+      '.json?fields=product_name,nutriments,quantity';
+    return root.fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('Sunucu yanıtı: ' + r.status);
+      return r.json();
+    }).then(function (data) {
+      if (!data || data.status !== 1 || !data.product) return null;
+      var p = data.product, n = p.nutriments || {};
+      function say(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+      return {
+        ad: p.product_name || ('Ürün ' + kod),
+        degerler: {
+          kcal: say(n['energy-kcal_100g']),
+          protein: say(n.proteins_100g),
+          karb: say(n.carbohydrates_100g),
+          seker: say(n.sugars_100g),
+          lif: say(n.fiber_100g),
+          yag: say(n.fat_100g),
+          doymus: say(n['saturated-fat_100g']),
+          sodyum: say(n.sodium_100g) != null ? say(n.sodium_100g) * 1000 : null,
+          kolesterol: say(n.cholesterol_100g) != null ? say(n.cholesterol_100g) * 1000 : null
+        }
+      };
+    });
+  }
+
+  /* Barkod bulunamadığında gösterilen pencere: elle "kendi besin" olarak ekle,
+     ya da (isteğe bağlı) Open Food Facts'te ara. Sonuç asla otomatik kaydedilmez;
+     "kendi besinim" formunda gözden geçirip kaydetmek kullanıcıya bırakılır. */
+  function barkodBulunamadiPenceresi(kod) {
+    var dlg = doc.getElementById('secici');
+    dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
+    var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+    dlg.textContent = '';
+    dlg.appendChild(h('div', { class: 'd-ust' }, h('h2', { text: 'Barkod bulunamadı' }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } })));
+    dlg.appendChild(h('div', { class: 'd-govde' },
+      h('p', { class: 'aciklama', text: 'Barkod: ' + kod + '. Bu numara kendi besinleriniz arasında kayıtlı değil.' }),
+      h('div', { class: 'araclar' },
+        h('button', { type: 'button', text: 'Kendi besin olarak ekle', onclick: function () {
+          dlg.close(); kendiBesinAc({ id: null, ad: '', kategori: 'Kendi besinim', varsayilan_g: 100, porsiyonlar: [], degerler: {}, barkod: kod }, besinKaydedildi);
+        } }),
+        h('button', { type: 'button', class: 'ikincil', text: 'Open Food Facts’te ara (internet gerekir)', onclick: function () {
+          durum.textContent = 'Aranıyor…'; durum.className = 'durum';
+          openFoodFactsAra(kod).then(function (bulunan) {
+            if (!bulunan) { durum.textContent = 'Open Food Facts’te de bulunamadı. Kendi besin olarak elle ekleyebilirsiniz.'; durum.className = 'durum hata'; return; }
+            dlg.close();
+            var taslak = { id: null, ad: bulunan.ad, kategori: 'Paketli ürün', varsayilan_g: 100, porsiyonlar: [], degerler: bulunan.degerler, barkod: kod };
+            kendiBesinAc(taslak, besinKaydedildi);
+            uyar('Open Food Facts’ten alınan değerler taslak olarak dolduruldu; kaydetmeden önce gözden geçirin.');
+          }).catch(function (e) {
+            durum.textContent = 'Arama başarısız: ' + ((e && e.message) || e); durum.className = 'durum hata';
+          });
+        } })),
+      durum));
+    dlg.showModal();
+  }
+
+  /* Ana giriş noktası: tara, kendi besinler arasında ara, bulunursa ayrıntısını aç. */
+  function barkodAra() {
+    barkodTaraPenceresi(function (kod) {
+      var bulunan = Foods.barkodBul(kod);
+      if (bulunan) { ayrintiAc(bulunan); return; }
+      barkodBulunamadiPenceresi(kod);
+    });
   }
 
   /* ---------- Besin ayrıntısı (seçilen miktar için tam değer tablosu) ---------- */
@@ -857,9 +1003,18 @@
       kategorilerSirali().forEach(function (k) {
         var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
       });
+      var barkodBtn = h('button', { type: 'button', class: 'ikincil', text: 'Barkod tara',
+        onclick: function () {
+          barkodTaraPenceresi(function (kod) {
+            var f = Foods.barkodBul(kod);
+            if (f) { adim2(f); return; }
+            adim1();
+            uyar('Barkod (' + kod + ') kendi besinleriniz arasında bulunamadı. "Besinlerim" sayfasından "Barkod tara" ile ekleyebilirsiniz.');
+          });
+        } });
       dlg.textContent = '';
       dlg.appendChild(baslik(OGUN_AD[og] + ' — besin ekle'));
-      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec), not, liste));
+      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec, barkodBtn), not, liste));
       doldur();
       arama.focus();
     }
@@ -1515,6 +1670,7 @@
     var ad = h('input', { type: 'text', value: mevcut ? mevcut.ad : '', placeholder: 'Örn. Annemin keki', 'aria-label': 'Besin adı' });
     var kategori = h('input', { type: 'text', value: mevcut ? (mevcut.kategori || 'Kendi besinim') : 'Kendi besinim', 'aria-label': 'Kategori' });
     var varsayilan = h('input', { type: 'number', min: 0, step: 'any', value: String(mevcut ? mevcut.varsayilan_g : 100), 'aria-label': 'Varsayılan miktar (g)' });
+    var barkod = h('input', { type: 'text', inputmode: 'numeric', value: mevcut && mevcut.barkod ? mevcut.barkod : '', placeholder: 'İsteğe bağlı', 'aria-label': 'Barkod' });
     var por = porsiyonDuzenleyici(mevcut ? mevcut.porsiyonlar : null);
     var form = degerFormu(mevcut ? mevcut.degerler : null);
     var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
@@ -1525,13 +1681,21 @@
       if (form.kaloriBos()) { durum.textContent = 'Kalori (kcal) alanı zorunludur.'; durum.className = 'durum hata'; return; }
       var g = sayi(varsayilan.value);
       if (!(g > 0)) { durum.textContent = 'Varsayılan miktar sıfırdan büyük olmalı.'; durum.className = 'durum hata'; return; }
+      var bk = barkod.value.trim() || null;
+      if (bk) {
+        var carpisan = Foods.barkodBul(bk);
+        if (carpisan && (!mevcut || carpisan.id !== mevcut.id)) {
+          durum.textContent = 'Bu barkod zaten "' + carpisan.ad + '" adlı besine kayıtlı.'; durum.className = 'durum hata'; return;
+        }
+      }
       var kayit = {
-        id: mevcut ? mevcut.id : 'k-' + yeniId(),
+        id: (mevcut && mevcut.id) ? mevcut.id : 'k-' + yeniId(),
         ad: a,
         kategori: kategori.value.trim() || 'Kendi besinim',
         varsayilan_g: g,
         porsiyonlar: por.oku(),
         degerler: form.oku(),
+        barkod: bk,
         guncellendi: new Date().toISOString()
       };
       if (!kayit.porsiyonlar.length) kayit.porsiyonlar = [{ ad: '1 porsiyon', g: g }];
@@ -1543,13 +1707,17 @@
 
     dlg.textContent = '';
     dlg.appendChild(h('div', { class: 'd-ust' },
-      h('h2', { text: mevcut ? 'Besini düzenle' : 'Kendi besinimi ekle' }),
+      h('h2', { text: (mevcut && mevcut.id) ? 'Besini düzenle' : 'Kendi besinimi ekle' }),
       h('button', { type: 'button', class: 'ikincil', text: 'Kapat', onclick: function () { dlg.close(); } })));
     dlg.appendChild(h('div', { class: 'd-govde' },
       h('div', { class: 'form-satir' },
         h('label', { class: 'genis' }, 'Besin adı ', ad),
         h('label', {}, 'Kategori ', kategori),
         h('label', {}, 'Varsayılan miktar (g) ', varsayilan)),
+      h('div', { class: 'form-satir' },
+        h('label', {}, 'Barkod ', barkod),
+        h('button', { type: 'button', class: 'ikincil', text: 'Kamerayla tara',
+          onclick: function () { barkodTaraPenceresi(function (kod) { barkod.value = kod; }); } })),
       h('h3', { text: 'Porsiyonlar' }),
       h('p', { class: 'aciklama', text: 'Miktar girerken seçilebilecek tanımlar. "1 ölçek" gibi bir tanım yazarsanız, ekleme sırasında adet çarpanıyla katları da seçilebilir.' }),
       por.eleman,
@@ -1557,7 +1725,7 @@
       h('p', { class: 'aciklama', text: 'Yalnızca bildiğiniz alanları doldurun. Boş bıraktığınız alan "bilinmiyor" sayılır ve toplamlarda sıfır olarak eklenmez.' }),
       form.eleman,
       h('div', { class: 'araclar' },
-        h('button', { type: 'button', text: mevcut ? 'Değişiklikleri kaydet' : 'Besini kaydet', onclick: kaydet }),
+        h('button', { type: 'button', text: (mevcut && mevcut.id) ? 'Değişiklikleri kaydet' : 'Besini kaydet', onclick: kaydet }),
         h('button', { type: 'button', class: 'ikincil', text: 'Vazgeç', onclick: function () { dlg.close(); } })),
       durum));
     dlg.showModal();
@@ -1715,9 +1883,18 @@
         if (k === 'Tarif') return; /* tarif içinde tarif seçilemez */
         var o = h('option', { value: k, text: k }); if (k === kat) o.selected = true; katSec.appendChild(o);
       });
+      var barkodBtn = h('button', { type: 'button', class: 'ikincil', text: 'Barkod tara',
+        onclick: function () {
+          barkodTaraPenceresi(function (kod) {
+            var f = Foods.barkodBul(kod);
+            if (f) { adim2(f); return; }
+            adim1();
+            uyar('Barkod (' + kod + ') kendi besinleriniz arasında bulunamadı. "Besinlerim" sayfasından "Barkod tara" ile ekleyebilirsiniz.');
+          });
+        } });
       dlg.textContent = '';
       dlg.appendChild(ust(baslikMetni));
-      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec), liste));
+      dlg.appendChild(h('div', { class: 'd-govde' }, h('div', { class: 'araclar' }, arama, katSec, barkodBtn), liste));
       doldur();
       if (!dlg.open) dlg.showModal();
       arama.focus();
