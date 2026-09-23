@@ -233,6 +233,18 @@ details.tablo-gorunum[open] summary { margin-bottom: 8px; }
 .form-satir label.genis input { flex: 1; min-width: 180px; }
 .form-satir input[type="text"] { min-width: 150px; }
 
+/* Vurgu rengi paleti (Bugün sağ üst) */
+.sayfa-ust { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.palet-kap { position: relative; flex: none; margin-top: 4px; }
+.ikincil.palet-dugme { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--cizgi);
+  background: conic-gradient(#0f766e, #1d4ed8, #7e22ce, #be123c, #c2410c, #15803d, #0f766e); }
+.palet-acilir { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; display: grid; grid-template-columns: repeat(4, 32px);
+  gap: 10px; padding: 12px; background: var(--panel); border: 1px solid var(--cizgi); border-radius: 12px; box-shadow: var(--golge-3); }
+.palet-acilir[hidden] { display: none; }
+.palet-renk { width: 32px; height: 32px; padding: 0; border-radius: 50%; border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--cizgi); }
+.palet-renk[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--metin); }
+.palet-renk[aria-pressed="true"]::after { content: "✓"; color: #fff; font-size: 15px; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+
 /* Barkod tarama */
 .barkod-video { display: block; width: 100%; max-width: 420px; margin: 10px 0; border-radius: 10px;
   background: #000; box-shadow: var(--golge-2); }
@@ -284,7 +296,7 @@ details.deger-grup summary { cursor: pointer; font-weight: 600; font-size: 14px;
 .gun-hucre { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 48px; padding: 7px 4px 8px; background: var(--panel); border: 1px solid var(--cizgi); border-radius: 10px; cursor: pointer; box-shadow: none; transition: background var(--gecis), border-color var(--gecis), transform var(--gecis); }
 .gun-hucre:hover { border-color: var(--vurgu); transform: translateY(-1px); box-shadow: var(--golge-1); }
 .gun-hucre-gun { font-size: 10.5px; color: var(--soluk); text-transform: uppercase; letter-spacing: 0.03em; }
-.gun-hucre-no { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gun-hucre-no { color: var(--metin); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .gun-hucre.bugun { box-shadow: inset 0 0 0 1.5px var(--vurgu); }
 .gun-hucre.secili { background: var(--vurgu); border-color: var(--vurgu); }
 .gun-hucre.secili .gun-hucre-gun { color: var(--vurgu-metin); opacity: 0.8; }

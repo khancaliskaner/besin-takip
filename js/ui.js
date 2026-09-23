@@ -22,7 +22,7 @@
     return el;
   }
 
-  var state = { q: '', kategori: '', gorunum: 'tumu', favs: new Set(), recents: [] };
+  var state = { q: '', kategori: '', gorunum: 'tumu', favs: new Set(), recents: [], vurgu: 'varsayilan' };
   var content = doc.getElementById('icerik');
 
   function uyar(msg) {
@@ -33,15 +33,42 @@
   }
 
   /* ---------- Tema ---------- */
+  /* Vurgu rengi paleti: her renk için açık temada koyu ton (beyaz yazıyla ≥4.5:1 kontrast),
+     koyu temada açık ton (koyu yazıyla) tanımlı; "varsayilan" CSS'teki özgün turkuazı korur. */
+  var PALET = [
+    { id: 'varsayilan', ad: 'Turkuaz', acik: '#0f766e', koyu: '#2dd4bf' },
+    { id: 'mavi', ad: 'Mavi', acik: '#1d4ed8', koyu: '#60a5fa' },
+    { id: 'lacivert', ad: 'Çivit', acik: '#4338ca', koyu: '#a5b4fc' },
+    { id: 'mor', ad: 'Mor', acik: '#7e22ce', koyu: '#c084fc' },
+    { id: 'gul', ad: 'Gül', acik: '#be123c', koyu: '#fb7185' },
+    { id: 'turuncu', ad: 'Turuncu', acik: '#c2410c', koyu: '#fb923c' },
+    { id: 'yesil', ad: 'Yeşil', acik: '#15803d', koyu: '#4ade80' },
+    { id: 'gri', ad: 'Arduvaz', acik: '#475569', koyu: '#cbd5e1' }
+  ];
+  function paletBul(id) { return PALET.filter(function (p) { return p.id === id; })[0] || PALET[0]; }
+  function vurguUygula() {
+    var st = doc.documentElement.style, koyu = doc.documentElement.getAttribute('data-tema') === 'koyu';
+    if (state.vurgu === 'varsayilan') {
+      ['--vurgu', '--vurgu-metin', '--vurgu-acik'].forEach(function (k) { st.removeProperty(k); });
+      return;
+    }
+    var p = paletBul(state.vurgu), renk = koyu ? p.koyu : p.acik;
+    st.setProperty('--vurgu', renk);
+    st.setProperty('--vurgu-metin', koyu ? '#0b1116' : '#ffffff');
+    st.setProperty('--vurgu-acik', 'color-mix(in srgb, ' + renk + (koyu ? ' 20%, #1c2226)' : ' 12%, #ffffff)'));
+  }
+
   function temaUygula(t) {
     doc.documentElement.setAttribute('data-tema', t);
+    vurguUygula();
     doc.getElementById('tema-btn').textContent = t === 'koyu' ? 'Açık tema' : 'Koyu tema';
     /* Grafikler renklerini CSS değişkenlerinden okur: tema değişince yeniden çizilmeli. */
     if (aktifSayfa === 'grafikler' && root.Charts) grafiklerSayfasi();
   }
   function temaBaslat() {
     var sistem = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)').matches ? 'koyu' : 'acik';
-    return Storage.getSetting('tema', sistem).then(temaUygula).then(function () {
+    return Storage.getSetting('vurguRenk', 'varsayilan').then(function (v) { state.vurgu = paletBul(v).id; })
+      .then(function () { return Storage.getSetting('tema', sistem); }).then(temaUygula).then(function () {
       doc.getElementById('tema-btn').addEventListener('click', function () {
         var yeni = doc.documentElement.getAttribute('data-tema') === 'koyu' ? 'acik' : 'koyu';
         temaUygula(yeni);
@@ -1071,14 +1098,44 @@
     return panel;
   }
 
+  /* Sağ üstteki renk paleti düğmesi + açılır renk seçici. Seçim 'vurguRenk' ayarında kalıcıdır. */
+  function paletKontrolu() {
+    var acilir = h('div', { class: 'palet-acilir', role: 'group', 'aria-label': 'Vurgu rengi', hidden: true });
+    var dugme = h('button', { type: 'button', class: 'ikincil palet-dugme', 'aria-label': 'Renk paleti', 'aria-expanded': 'false', title: 'Renk paleti' });
+    var kap = h('div', { class: 'palet-kap' }, dugme, acilir);
+    function kapat() { acilir.hidden = true; dugme.setAttribute('aria-expanded', 'false'); doc.removeEventListener('click', disTik, true); doc.removeEventListener('keydown', tus, true); }
+    function disTik(e) { if (!kap.contains(e.target)) kapat(); }
+    function tus(e) { if (e.key === 'Escape') { kapat(); dugme.focus(); } }
+    function renkleriCiz() {
+      var koyu = doc.documentElement.getAttribute('data-tema') === 'koyu';
+      acilir.textContent = '';
+      PALET.forEach(function (p) {
+        acilir.appendChild(h('button', { type: 'button', class: 'palet-renk', 'aria-label': p.ad, title: p.ad,
+          'aria-pressed': String(state.vurgu === p.id), style: 'background:' + (koyu ? p.koyu : p.acik),
+          onclick: function () {
+            state.vurgu = p.id; vurguUygula(); Storage.setSetting('vurguRenk', p.id); renkleriCiz();
+            if (aktifSayfa === 'grafikler' && root.Charts) grafiklerSayfasi();
+          } }));
+      });
+    }
+    dugme.addEventListener('click', function () {
+      if (!acilir.hidden) { kapat(); return; }
+      renkleriCiz(); acilir.hidden = false; dugme.setAttribute('aria-expanded', 'true');
+      doc.addEventListener('click', disTik, true); doc.addEventListener('keydown', tus, true);
+    });
+    return kap;
+  }
+
   function bugunCiz(kayitlar, hedefler, suKayitlari, tamamlananListe, kiloBugun, orucAktif) {
     var bugun = yerelTarih(new Date());
     var hs = hesapla(kayitlar);
     var tamamlananSet = new Set(tamamlananListe.map(function (x) { return x.id; }));
     var sayfa = h('div');
 
-    sayfa.appendChild(h('h1', { text: gun.tarih === bugun ? 'Bugün' : tarihMetni(gun.tarih) },
-      tamamlananSet.has(gun.tarih) ? h('span', { class: 'gun-tik-baslik', title: 'Gün tamamlandı', 'aria-label': 'Gün tamamlandı', text: '✓' }) : null));
+    sayfa.appendChild(h('div', { class: 'sayfa-ust' },
+      h('h1', { text: gun.tarih === bugun ? 'Bugün' : tarihMetni(gun.tarih) },
+        tamamlananSet.has(gun.tarih) ? h('span', { class: 'gun-tik-baslik', title: 'Gün tamamlandı', 'aria-label': 'Gün tamamlandı', text: '✓' }) : null),
+      paletKontrolu()));
     sayfa.appendChild(h('p', { class: 'alt-baslik', text: gun.tarih === bugun ? tarihMetni(gun.tarih) : 'Seçili gün' }));
 
     var tarihGirdisi = h('input', { type: 'date', value: gun.tarih, 'aria-label': 'Tarih',
@@ -1403,9 +1460,9 @@
       if (!root.confirm(msg)) { sonuc('İçe aktarma iptal edildi.', false); return; }
       yedekAl('besin-takip-ice-aktarma-oncesi').then(function () { return Storage.degistirHepsini(d.veri); })
         .then(function () { return Storage.setSetting('sonYedek', new Date().toISOString()); })
-        .then(function () { return Promise.all([Storage.listFavorites(), Storage.listRecents(), Storage.getSetting('tema', 'acik'), besinListesiniTazele(), hareketListesiniTazele()]); })
+        .then(function () { return Promise.all([Storage.listFavorites(), Storage.listRecents(), Storage.getSetting('tema', 'acik'), besinListesiniTazele(), hareketListesiniTazele(), Storage.getSetting('vurguRenk', 'varsayilan')]); })
         .then(function (r) {
-          state.favs = new Set(r[0]); state.recents = r[1]; temaUygula(r[2]);
+          state.favs = new Set(r[0]); state.recents = r[1]; state.vurgu = paletBul(r[5]).id; temaUygula(r[2]);
           var toplamKayit = Backup.BOLUMLER.filter(function (k) { return k !== 'settings'; })
             .reduce(function (a, k) { return a + d.veri[k].length; }, 0);
           sonuc('İçe aktarma tamam: ' + d.veri.log.length + ' öğün kaydı dahil, toplam ' + toplamKayit + ' kayıt geri yüklendi.', false);
