@@ -509,48 +509,107 @@
      düzenledikten sonra "Öğüne ekle" ile onaylar. */
 
   var GEMINI_VARSAYILAN_MODEL = 'gemini-2.0-flash';
-  var FOTO_PROMPT = 'Bu fotoğraftaki yemek/öğünü incele. Gördüğün her ayrı besini bir JSON dizisi ' +
-    'olarak döndür. Her öğe için şu alanları kullan: "ad" (kısa Türkçe besin adı), "tahmini_g" ' +
-    '(bu tabaktaki/porsiyondaki tahmini gram, sayı), "kcal_100g", "protein_100g", "karb_100g", ' +
-    '"yag_100g" (100 gram için tahmini değerler; emin değilsen null). Yalnızca geçerli bir JSON ' +
-    'dizisi döndür, başka hiçbir açıklama ekleme. Örnek: ' +
-    '[{"ad":"Izgara tavuk göğsü","tahmini_g":150,"kcal_100g":165,"protein_100g":31,"karb_100g":0,"yag_100g":3.6}]';
+  var GEMINI_YEDEK_MODELLER = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  var GEMINI_ZAMAN_ASIMI_MS = 45000;
 
-  /* base64 görseli Gemini'ye gönderir, ayrıştırılmış besin listesini döndürür. */
-  function geminiFotoTani(base64Veri, mimeTuru, apiAnahtari, model) {
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) +
+  /* İstemin ana metni. Uygulamanın kendi besin listesi (kimlik|ad) eklenir: model mümkünse
+     listeden birebir bir kimlik seçer, böylece doğrulanmış veritabanı değerleri kullanılır ve
+     modelin kendi tahmin ettiği makrolara yalnızca listede karşılık yoksa başvurulur. */
+  function fotoPromptuOlustur(not) {
+    var katalog = Foods.ALL.filter(function (f) { return !f.tarif; })
+      .map(function (f) { return f.id + '|' + f.ad; }).join('\n');
+    return 'Bu fotoğraftaki yemek/öğünü incele ve gördüğün her ayrı besini bir JSON dizisi olarak döndür. ' +
+      'Aşağıda uygulamanın besin listesi var (her satır "kimlik|ad"). Bir besinin listede birebir karşılığı ' +
+      'varsa "besin_id" alanına o satırın kimliğini AYNEN yaz; uygun karşılık yoksa "besin_id" null olsun ' +
+      '(kimlik UYDURMA). Alanlar: "besin_id", "ad" (kısa Türkçe ad), "tahmini_g" (fotoğraftaki porsiyonun ' +
+      'tahmini gramı, sayı) ve YALNIZCA besin_id null ise "kcal_100g", "protein_100g", "karb_100g", ' +
+      '"yag_100g" (100 g için tahmini değerler; emin değilsen null). Porsiyon büyüklüğünü tabak, çatal-kaşık ' +
+      'gibi ölçek ipuçlarından ve varsa aşağıdaki kullanıcı notundan çıkar. Yalnızca geçerli bir JSON dizisi ' +
+      'döndür, başka açıklama ekleme.' +
+      (not ? '\n\nKullanıcı notu: ' + not : '') +
+      '\n\nBESİN LİSTESİ:\n' + katalog;
+  }
+
+  function beklet(ms) { return new Promise(function (r) { root.setTimeout(r, ms); }); }
+
+  function geminiHataMetni(durum, mesaj) {
+    if (durum === 400 && /api key/i.test(mesaj || '')) return 'API anahtarı geçersiz görünüyor. Ayarlar sayfasından kontrol edin.';
+    if (durum === 401 || durum === 403) return 'API anahtarı yetkisiz ya da bu hesap/bölgede kullanılamıyor (' + durum + ').';
+    if (durum === 404) return 'Model bulunamadı. Ayarlar sayfasından model adını kontrol edin.';
+    if (durum === 429) return 'İstek kotası doldu. Biraz bekleyip tekrar deneyin.';
+    if (durum >= 500) return 'Gemini sunucusu şu an yanıt veremiyor (' + durum + '). Biraz sonra tekrar deneyin.';
+    return mesaj || ('Sunucu yanıtı: ' + durum);
+  }
+
+  /* Tek istek: zaman aşımı + geçici hatalarda (429/500/503) en fazla 2 yeniden deneme. */
+  function geminiIstek(url, govde, deneme) {
+    deneme = deneme || 0;
+    var ctl = root.AbortController ? new root.AbortController() : null;
+    var zaman = root.setTimeout(function () { if (ctl) ctl.abort(); }, GEMINI_ZAMAN_ASIMI_MS);
+    return root.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(govde), signal: ctl ? ctl.signal : undefined })
+      .then(function (r) {
+        root.clearTimeout(zaman);
+        if (r.ok) return r.json();
+        return r.json().catch(function () { return null; }).then(function (h) {
+          var hata = new Error(geminiHataMetni(r.status, h && h.error && h.error.message));
+          hata.durum = r.status;
+          if ((r.status === 429 || r.status === 500 || r.status === 503) && deneme < 2) {
+            return beklet(2000 * (deneme + 1)).then(function () { return geminiIstek(url, govde, deneme + 1); });
+          }
+          throw hata;
+        });
+      }, function (e) {
+        root.clearTimeout(zaman);
+        if (e && e.name === 'AbortError') throw new Error('Zaman aşımı: Gemini ' + (GEMINI_ZAMAN_ASIMI_MS / 1000) + ' saniyede yanıt vermedi.');
+        throw new Error('Ağa ulaşılamadı; internet bağlantınızı kontrol edin.');
+      });
+  }
+
+  /* Model bulunamazsa (404) sıradaki yedek modele geçer. */
+  function geminiModelleriDene(modeller, govde, apiAnahtari) {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modeller[0]) +
       ':generateContent?key=' + encodeURIComponent(apiAnahtari);
+    return geminiIstek(url, govde).catch(function (e) {
+      if (e && e.durum === 404 && modeller.length > 1) return geminiModelleriDene(modeller.slice(1), govde, apiAnahtari);
+      throw e;
+    });
+  }
+
+  /* base64 görseli Gemini'ye gönderir, ayrıştırılmış besin listesini döndürür. Her kalem:
+     {besin_id (geçerli DB kimliği ya da null), ad, tahmini_g, kcal_100g, protein_100g, karb_100g, yag_100g}. */
+  function geminiFotoTani(base64Veri, mimeTuru, apiAnahtari, model, not) {
+    var modeller = [model].concat(GEMINI_YEDEK_MODELLER).filter(function (m, i, a) { return m && a.indexOf(m) === i; });
     var govde = {
-      contents: [{ parts: [{ text: FOTO_PROMPT }, { inline_data: { mime_type: mimeTuru, data: base64Veri } }] }],
+      contents: [{ parts: [{ text: fotoPromptuOlustur(not) }, { inline_data: { mime_type: mimeTuru, data: base64Veri } }] }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
     };
-    return root.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(govde) })
-      .then(function (r) {
-        if (!r.ok) return r.json().catch(function () { return null; }).then(function (h) {
-          var m = h && h.error && h.error.message ? h.error.message : ('Sunucu yanıtı: ' + r.status);
-          throw new Error(m);
-        });
-        return r.json();
-      })
-      .then(function (data) {
-        var metin = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
-          data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
-        if (!metin) throw new Error('Yanıt boş döndü.');
-        var ayrisik;
-        try { ayrisik = JSON.parse(metin); } catch (e) { throw new Error('Yanıt JSON olarak ayrıştırılamadı.'); }
-        if (!Array.isArray(ayrisik)) throw new Error('Yanıt beklenen biçimde değil (dizi bekleniyor).');
-        function say(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
-        return ayrisik.map(function (o) {
-          return {
-            ad: (o && typeof o.ad === 'string' && o.ad.trim()) ? o.ad.trim() : 'Bilinmeyen besin',
-            tahmini_g: (o && say(o.tahmini_g) > 0) ? o.tahmini_g : 100,
-            kcal_100g: o ? say(o.kcal_100g) : null,
-            protein_100g: o ? say(o.protein_100g) : null,
-            karb_100g: o ? say(o.karb_100g) : null,
-            yag_100g: o ? say(o.yag_100g) : null
-          };
-        }).filter(function (o) { return o.ad !== 'Bilinmeyen besin' || o.kcal_100g != null; });
-      });
+    return geminiModelleriDene(modeller, govde, apiAnahtari).then(function (data) {
+      if (data && data.promptFeedback && data.promptFeedback.blockReason) {
+        throw new Error('İstek güvenlik nedeniyle engellendi (' + data.promptFeedback.blockReason + ').');
+      }
+      var metin = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+        data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+      if (!metin) throw new Error('Yanıt boş döndü.');
+      var ayrisik;
+      try { ayrisik = JSON.parse(metin); } catch (e) { throw new Error('Yanıt JSON olarak ayrıştırılamadı.'); }
+      if (!Array.isArray(ayrisik)) throw new Error('Yanıt beklenen biçimde değil (dizi bekleniyor).');
+      function say(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+      return ayrisik.map(function (o) {
+        o = o || {};
+        var f = (typeof o.besin_id === 'string' && Foods.BY_ID[o.besin_id] && !Foods.BY_ID[o.besin_id].tarif) ? Foods.BY_ID[o.besin_id] : null;
+        var ad = (typeof o.ad === 'string' && o.ad.trim()) ? o.ad.trim() : (f ? f.ad : 'Bilinmeyen besin');
+        return {
+          besin_id: f ? f.id : null,
+          ad: f ? f.ad : ad,
+          tahmini_g: say(o.tahmini_g) > 0 ? o.tahmini_g : (f ? f.varsayilan_g : 100),
+          kcal_100g: f ? null : say(o.kcal_100g),
+          protein_100g: f ? null : say(o.protein_100g),
+          karb_100g: f ? null : say(o.karb_100g),
+          yag_100g: f ? null : say(o.yag_100g)
+        };
+      }).filter(function (o) { return o.besin_id || o.ad !== 'Bilinmeyen besin' || o.kcal_100g != null; });
+    });
   }
 
   /* Video/kanvastan aşağı ölçeklenmiş bir JPEG (dataURL) üretir. */
@@ -567,7 +626,7 @@
      bitince() çağrılır ve pencere kapanır (öğün sayfası kendini tazeler). */
   function fotoTaniPenceresi(og, bitince) {
     var dlg = doc.getElementById('secici');
-    var stream = null, dur = false, dataUrl = null;
+    var stream = null, dur = false, dataUrl = null, kullaniciNotu = '';
     function kapat() { dur = true; if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; } dlg.close(); }
     dlg.onclick = function (e) { if (e.target === dlg) kapat(); };
     function ust(metin) {
@@ -625,6 +684,12 @@
       if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
       var img = h('img', { src: dataUrl, class: 'foto-onizleme', alt: 'Çekilen fotoğraf' });
       var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
+      var notInp = h('textarea', { class: 'foto-not', maxlength: '300', rows: '2', 'aria-label': 'Porsiyon notu',
+        placeholder: 'Örn. 26 cm tabak, 2 kepçe pilav, tavuk yaklaşık 150 g', oninput: function (e) { kullaniciNotu = e.target.value; } });
+      notInp.value = kullaniciNotu;
+      var taniBtn = h('button', { type: 'button', text: 'Tanı (Gemini’ye gönder)', onclick: tani });
+      var tekrarBtn = h('button', { type: 'button', class: 'ikincil', text: '‹ Yeniden çek', onclick: cekimAdimi });
+      function mesgul(evet) { taniBtn.disabled = evet; tekrarBtn.disabled = evet; }
       function tani() {
         Promise.all([Storage.getSetting('geminiApiKey', null), Storage.getSetting('geminiModel', GEMINI_VARSAYILAN_MODEL)])
           .then(function (r) {
@@ -633,55 +698,96 @@
               durum.textContent = 'Önce Ayarlar sayfasında Gemini API anahtarınızı girmelisiniz.'; durum.className = 'durum hata';
               return;
             }
-            durum.textContent = 'Gemini’ye gönderiliyor…'; durum.className = 'durum';
+            mesgul(true);
+            durum.textContent = 'Gemini’ye gönderiliyor… (en fazla ' + (GEMINI_ZAMAN_ASIMI_MS / 1000) + ' sn)'; durum.className = 'durum';
             var virgul = dataUrl.indexOf(',');
             var base64Veri = dataUrl.slice(virgul + 1);
-            geminiFotoTani(base64Veri, 'image/jpeg', apiAnahtari, model).then(function (kalemler) {
-              if (!kalemler.length) { durum.textContent = 'Fotoğrafta besin tanınamadı. Farklı bir fotoğrafla tekrar deneyin.'; durum.className = 'durum hata'; return; }
+            geminiFotoTani(base64Veri, 'image/jpeg', apiAnahtari, model, kullaniciNotu.trim()).then(function (kalemler) {
+              if (dur) return;
+              if (!kalemler.length) { mesgul(false); durum.textContent = 'Fotoğrafta besin tanınamadı. Farklı bir fotoğrafla tekrar deneyin.'; durum.className = 'durum hata'; return; }
               sonucAdimi(kalemler);
             }).catch(function (e) {
+              if (dur) return;
+              mesgul(false);
               durum.textContent = 'Tanıma başarısız: ' + ((e && e.message) || e); durum.className = 'durum hata';
             });
           });
       }
       dlg.textContent = '';
       dlg.appendChild(ust('Fotoğrafla besin tanı'));
-      dlg.appendChild(h('div', { class: 'd-govde' }, img, durum,
-        h('div', { class: 'araclar' },
-          h('button', { type: 'button', text: 'Tanı (Gemini’ye gönder)', onclick: tani }),
-          h('button', { type: 'button', class: 'ikincil', text: '‹ Yeniden çek', onclick: cekimAdimi }))));
+      dlg.appendChild(h('div', { class: 'd-govde' }, img,
+        h('label', { class: 'foto-not-etiket' }, 'İsteğe bağlı not (porsiyon/ölçek ipucu — tahmini iyileştirir)', notInp),
+        durum,
+        h('div', { class: 'araclar' }, taniBtn, tekrarBtn)));
     }
 
     function sonucAdimi(kalemler) {
       var durum = h('p', { class: 'durum', role: 'status', 'aria-live': 'polite' });
       var tb = h('tbody');
-      var satirlar = kalemler.map(function (k) {
-        var oneriler = Foods.search(k.ad).filter(function (f) { return !f.tarif; }).slice(0, 5);
-        var dahil = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Öğüne dahil et: ' + k.ad });
+      var satirlar;
+      /* kcal + protein/karbonhidrat/yağ özeti: iki satırlık hücre içeriği */
+      function ozetHucresi() {
+        var kcalEl = h('b'), altEl = h('span', { class: 'not' });
+        return {
+          eleman: h('td', { class: 'sayi foto-ozet' }, kcalEl, h('br'), altEl),
+          yaz: function (v) {
+            kcalEl.textContent = Calc.fmt(v.kcal, 'kcal') + ' kcal';
+            altEl.textContent = 'P ' + Calc.fmt(v.protein, 'g') + ' · K ' + Calc.fmt(v.karb, 'g') + ' · Y ' + Calc.fmt(v.yag, 'g');
+          }
+        };
+      }
+      var toplamHucre = ozetHucresi();
+      function toplamCiz() {
+        if (!satirlar) return;
+        var t = { kcal: null, protein: null, karb: null, yag: null };
+        satirlar.forEach(function (s) {
+          if (!s.dahil.checked) return;
+          var v = s.deger();
+          Object.keys(t).forEach(function (k) { if (typeof v[k] === 'number') t[k] = (t[k] || 0) + v[k]; });
+        });
+        toplamHucre.yaz(t);
+      }
+
+      satirlar = kalemler.map(function (k) {
+        /* Öneri sırası: AI'nin listeden seçtiği kimlik önce, sonra ad aramasından gelenler. */
+        var oneriler = [];
+        if (k.besin_id) oneriler.push(Foods.BY_ID[k.besin_id]);
+        Foods.search(k.ad).filter(function (f) { return !f.tarif && f.id !== k.besin_id; })
+          .slice(0, 5).forEach(function (f) { oneriler.push(f); });
+        var dahil = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Öğüne dahil et: ' + k.ad, onchange: toplamCiz });
         var adInp = h('input', { type: 'text', value: k.ad, 'aria-label': 'Besin adı' });
         var gramInp = h('input', { type: 'number', min: 0, step: 'any', value: String(k.tahmini_g), 'aria-label': 'Miktar (gram)' });
         var sec = h('select', { 'aria-label': 'Veritabanı eşleşmesi' });
         oneriler.forEach(function (f) { sec.appendChild(h('option', { value: f.id, text: f.ad + ' — ' + f.kategori })); });
         sec.appendChild(h('option', { value: '', text: 'Eşleşme yok (AI tahminini kullan)', selected: !oneriler.length }));
-        var onizleme = h('span', { class: 'sayi' });
-        function ciz() {
-          var g = sayi(gramInp.value) || 0;
+        var porKap = h('div', { class: 'foto-porsiyon' });
+        var por = null;
+        var ozet = ozetHucresi();
+        function deger() {
           var f = sec.value ? Foods.BY_ID[sec.value] : null;
           var d = f ? f.degerler : { kcal: k.kcal_100g, protein: k.protein_100g, karb: k.karb_100g, yag: k.yag_100g };
-          var v = Calc.scale(d, g);
-          onizleme.textContent = Calc.fmt(v.kcal, 'kcal') + ' kcal';
+          return Calc.scale(d, sayi(gramInp.value) || 0);
         }
-        sec.addEventListener('change', ciz);
-        gramInp.addEventListener('input', ciz);
-        ciz();
+        function ciz() { ozet.yaz(deger()); toplamCiz(); }
+        function porsiyonYenile() {
+          var f = sec.value ? Foods.BY_ID[sec.value] : null;
+          porKap.textContent = ''; por = null;
+          if (f && f.porsiyonlar.length) { por = porsiyonSecici(f, gramInp, ciz); porKap.appendChild(por.eleman); }
+        }
+        sec.addEventListener('change', function () { porsiyonYenile(); ciz(); });
+        gramInp.addEventListener('input', function () { if (por) por.sifirla(); ciz(); });
+        porsiyonYenile();
+        ozet.yaz(deger());
         tb.appendChild(h('tr', {},
           h('td', {}, dahil),
           h('td', {}, adInp, sec.options.length > 1 ? sec : null,
+            k.besin_id ? h('p', { class: 'not', text: 'Eşleşmeyi AI, besin listenizden seçti; kontrol edin.' }) : null,
             oneriler.length ? null : h('p', { class: 'not', text: 'Eşleşme yok; eklenirse AI’nin yaklaşık değerleriyle "kendi besinim" olarak kaydedilir (doğrulanmamış).' })),
-          h('td', {}, gramInp, ' g'),
-          h('td', { class: 'sayi' }, onizleme)));
-        return { dahil: dahil, adInp: adInp, gramInp: gramInp, sec: sec, kalem: k };
+          h('td', {}, gramInp, ' g', porKap),
+          ozet.eleman));
+        return { dahil: dahil, adInp: adInp, gramInp: gramInp, sec: sec, kalem: k, deger: deger };
       });
+      toplamCiz();
 
       function ekle() {
         var secilenler = satirlar.filter(function (s) { return s.dahil.checked; });
@@ -725,8 +831,9 @@
       dlg.appendChild(ust('Tanınan besinler'));
       dlg.appendChild(h('div', { class: 'd-govde' },
         h('p', { class: 'aciklama', text: 'Değerler yaklaşıktır ve doğrulanmamıştır; eklemeden önce ad/miktarı düzenleyebilir veya veritabanı eşleşmesini değiştirebilirsiniz.' }),
-        h('div', { class: 'tablo-kap' }, h('table', {}, h('thead', {}, h('tr', {},
-          h('th', { 'aria-label': 'Dahil et' }), h('th', { text: 'Besin' }), h('th', { text: 'Miktar' }), h('th', { class: 'sayi', text: 'Kalori' }))), tb)),
+        h('div', { class: 'tablo-kap' }, h('table', { class: 'foto-tablo' }, h('thead', {}, h('tr', {},
+          h('th', { 'aria-label': 'Dahil et' }), h('th', { text: 'Besin' }), h('th', { text: 'Miktar' }), h('th', { class: 'sayi', text: 'Değerler' }))), tb,
+          h('tfoot', {}, h('tr', { class: 'foto-toplam' }, h('td'), h('td', { text: 'Toplam (seçili)' }), h('td'), toplamHucre.eleman)))),
         h('div', { class: 'araclar' },
           h('button', { type: 'button', text: OGUN_AD[og] + ' öğününe ekle', onclick: ekle }),
           h('button', { type: 'button', class: 'ikincil', text: '‹ Yeniden çek', onclick: cekimAdimi })),

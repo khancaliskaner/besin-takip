@@ -250,6 +250,20 @@ details.tablo-gorunum[open] summary { margin-bottom: 8px; }
   background: #000; box-shadow: var(--golge-2); }
 
 /* Fotoğrafla besin tanıma */
+.foto-not-etiket { display: block; margin: 6px 0 10px; font-size: 13px; color: var(--soluk); }
+.foto-not { display: block; width: 100%; margin-top: 4px; resize: vertical; font: inherit; color: var(--metin);
+  background: var(--panel); border: 1px solid var(--cizgi); border-radius: 8px; padding: 8px 11px; }
+.foto-tablo { width: 100%; }
+.foto-tablo td { vertical-align: top; }
+.foto-tablo td:nth-child(2) { width: 46%; min-width: 0; }
+.foto-tablo input[type="text"], .foto-tablo select { display: block; width: 100%; max-width: 100%; margin-bottom: 6px; }
+.foto-tablo input[type="number"] { width: 84px; }
+.foto-tablo p.not { margin: 2px 0 0; white-space: normal; }
+.foto-tablo .porsiyon-grup { flex-wrap: wrap; }
+.foto-ozet { white-space: nowrap; }
+.foto-ozet .not { font-size: 12px; }
+.foto-porsiyon { margin-top: 6px; }
+.foto-toplam td { border-top: 2px solid var(--cizgi); font-weight: 700; }
 .foto-onizleme { display: block; width: 100%; max-width: 420px; margin: 10px 0; border-radius: 10px;
   box-shadow: var(--golge-2); }
 .form-satir input[type="number"] { width: 110px; }
