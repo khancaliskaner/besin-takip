@@ -160,7 +160,7 @@ Kullanıcı "barkod gibi fotoğraf ekle, öğünün değerlerini versin" dedi. B
 - **Not alanı:** önizlemede isteğe bağlı porsiyon/ölçek ipucu (300 karakter), isteme "Kullanıcı notu" olarak eklenir.
 - **Sonuç ekranı:** kalem başına kcal + protein/karb/yağ, seçili kalemlerin canlı toplamı, eşleşen besin için porsiyon seçici (× adet).
 - **Güvenilirlik:** 45 sn zaman aşımı, 429/500/503'te 2 yeniden deneme, model 404 verirse yedek modellere (`gemini-2.0-flash`, `gemini-1.5-flash`) geçiş, güvenlik engeli algılama, anlaşılır Türkçe hata metinleri (401/403/404/429/5xx/ağ/zaman aşımı), istek sürerken düğmeler kilitli.
-- Doğrulama: sahte (mock) Gemini yanıtıyla tam akış CDP'de denendi — DB eşleşmesi, 150 g beyaz ekmek = 398 kcal, toplam 598 kcal, ekleme sonrası 2 log + 1 "(AI tahmini)" besin; 404→yedek model, 503→yeniden deneme, 401 mesajı doğrulandı. **Gerçek Gemini çağrısı hâlâ denenmedi.**
+- Doğrulama: sahte (mock) Gemini yanıtıyla tam akış CDP'de denendi — DB eşleşmesi, 150 g beyaz ekmek = 398 kcal, toplam 598 kcal, ekleme sonrası 2 log + 1 "(AI tahmini)" besin; 404→yedek model, 503→yeniden deneme, 401 mesajı doğrulandı. **Gerçek Gemini çağrısı (2026-09-23, kullanıcı telefonunda): ilk denemede `gemini-2.0-flash` "no longer available" hatası verdi (Google modeli kapatmış); varsayılan `gemini-3.6-flash`'a alındı, "model yok" hatasında yedek modele geçiş + çalışan modeli ayara kaydetme eklendi (0.15.1). Sonrasında kullanıcı hatasız çalıştığını doğruladı.**
 
 ### 6.10 Mobil: PWA (2026-09-22, kullanıcı isteğiyle eklendi)
 
