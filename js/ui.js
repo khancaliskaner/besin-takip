@@ -255,7 +255,14 @@
       h('button', { type: 'button', text: '+ Kendi besinim', onclick: function () { kendiBesinAc(null, besinKaydedildi); } }),
       h('button', { type: 'button', class: 'ikincil', text: '+ Tarif oluştur', onclick: function () { tarifAc(null, besinKaydedildi); } }),
       h('button', { type: 'button', class: 'ikincil', text: 'Besin karşılaştır', onclick: besinKarsilastirmaPenceresi }),
-      h('button', { type: 'button', class: 'ikincil', text: 'Barkod tara', onclick: barkodAra })));
+      h('button', { type: 'button', class: 'ikincil', text: 'Barkod tara', onclick: barkodAra }),
+      h('button', { type: 'button', class: 'ikincil', text: 'Fotoğrafla tanı', onclick: function () {
+        fotoTaniPenceresi(null, function (adet) {
+          doc.getElementById('secici').close();
+          if (aktifSayfa === 'besinler') besinlerSayfasi();
+          uyar(adet + ' besin "kendi besinim" olarak kaydedildi (AI tahmini, doğrulanmamış).');
+        }, 'besin');
+      } })));
     content.appendChild(h('div', { class: 'tablo-kap' }, tablo));
     content.appendChild(sayac);
     listeyiYenile();
@@ -517,7 +524,7 @@
   /* İstemin ana metni. Uygulamanın kendi besin listesi (kimlik|ad) eklenir: model mümkünse
      listeden birebir bir kimlik seçer, böylece doğrulanmış veritabanı değerleri kullanılır ve
      modelin kendi tahmin ettiği makrolara yalnızca listede karşılık yoksa başvurulur. */
-  function fotoPromptuOlustur(not) {
+  function fotoPromptuOlustur(not, mod) {
     var katalog = Foods.ALL.filter(function (f) { return !f.tarif; })
       .map(function (f) { return f.id + '|' + f.ad; }).join('\n');
     return 'Bu fotoğraftaki yemek/öğünü incele ve gördüğün her ayrı besini bir JSON dizisi olarak döndür. ' +
@@ -528,6 +535,7 @@
       '"yag_100g" (100 g için tahmini değerler; emin değilsen null). Porsiyon büyüklüğünü tabak, çatal-kaşık ' +
       'gibi ölçek ipuçlarından ve varsa aşağıdaki kullanıcı notundan çıkar. Yalnızca geçerli bir JSON dizisi ' +
       'döndür, başka açıklama ekleme.' +
+      (mod === 'tarif' ? ' Fotoğraf bir yemek tarifi için çekildi: yemeği oluşturan ana malzemeleri ayrı ayrı listele.' : '') +
       (not ? '\n\nKullanıcı notu: ' + not : '') +
       '\n\nBESİN LİSTESİ:\n' + katalog;
   }
@@ -586,10 +594,10 @@
 
   /* base64 görseli Gemini'ye gönderir, ayrıştırılmış besin listesini döndürür. Her kalem:
      {besin_id (geçerli DB kimliği ya da null), ad, tahmini_g, kcal_100g, protein_100g, karb_100g, yag_100g}. */
-  function geminiFotoTani(base64Veri, mimeTuru, apiAnahtari, model, not) {
+  function geminiFotoTani(base64Veri, mimeTuru, apiAnahtari, model, not, mod) {
     var modeller = [model].concat(GEMINI_YEDEK_MODELLER).filter(function (m, i, a) { return m && a.indexOf(m) === i; });
     var govde = {
-      contents: [{ parts: [{ text: fotoPromptuOlustur(not) }, { inline_data: { mime_type: mimeTuru, data: base64Veri } }] }],
+      contents: [{ parts: [{ text: fotoPromptuOlustur(not, mod) }, { inline_data: { mime_type: mimeTuru, data: base64Veri } }] }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
     };
     return geminiModelleriDene(modeller, govde, apiAnahtari).then(function (data) {
@@ -632,12 +640,20 @@
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  /* Fotoğraf çek/seç → tanı → gözden geçir → öğüne ekle penceresi.
-     bitince() çağrılır ve pencere kapanır (öğün sayfası kendini tazeler). */
-  function fotoTaniPenceresi(og, bitince) {
+  /* Fotoğraf çek/seç → tanı → gözden geçir → kaydet penceresi. Üç kullanım kipi:
+       'ogun'  (varsayılan): og öğününe kayıt ekler; bitince() çağrılır.
+       'tarif': kayıt yapmaz, bitince([{besin_id, gram}]) ile bileşenleri döndürür; Kapat → iptal().
+       'besin' : yalnızca veritabanında eşleşmeyenleri "kendi besinim" olarak kaydeder; bitince(adet).
+     Geri çağrılar pencereyi kendileri kapatır/yeniden çizer. */
+  function fotoTaniPenceresi(og, bitince, mod, iptal) {
+    mod = mod || 'ogun';
     var dlg = doc.getElementById('secici');
     var stream = null, dur = false, dataUrl = null, kullaniciNotu = '';
-    function kapat() { dur = true; if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; } dlg.close(); }
+    function kapat() {
+      dur = true;
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+      if (mod === 'tarif' && iptal) iptal(); else dlg.close();
+    }
     dlg.onclick = function (e) { if (e.target === dlg) kapat(); };
     function ust(metin) {
       return h('div', { class: 'd-ust' }, h('h2', { text: metin }),
@@ -712,7 +728,7 @@
             durum.textContent = 'Gemini’ye gönderiliyor… (en fazla ' + (GEMINI_ZAMAN_ASIMI_MS / 1000) + ' sn)'; durum.className = 'durum';
             var virgul = dataUrl.indexOf(',');
             var base64Veri = dataUrl.slice(virgul + 1);
-            geminiFotoTani(base64Veri, 'image/jpeg', apiAnahtari, model, kullaniciNotu.trim()).then(function (kalemler) {
+            geminiFotoTani(base64Veri, 'image/jpeg', apiAnahtari, model, kullaniciNotu.trim(), mod).then(function (kalemler) {
               if (kalemler.model && kalemler.model !== model) Storage.setSetting('geminiModel', kalemler.model);
               if (dur) return;
               if (!kalemler.length) { mesgul(false); durum.textContent = 'Fotoğrafta besin tanınamadı. Farklı bir fotoğrafla tekrar deneyin.'; durum.className = 'durum hata'; return; }
@@ -788,11 +804,14 @@
         sec.addEventListener('change', function () { porsiyonYenile(); ciz(); });
         gramInp.addEventListener('input', function () { if (por) por.sifirla(); ciz(); });
         porsiyonYenile();
+        /* Besinlerim kipi yalnızca eşleşmeyenleri kaydeder: veritabanında olanlar varsayılan olarak seçili gelmez. */
+        if (mod === 'besin' && sec.value) dahil.checked = false;
         ozet.yaz(deger());
         tb.appendChild(h('tr', {},
           h('td', {}, dahil),
           h('td', {}, adInp, sec.options.length > 1 ? sec : null,
             k.besin_id ? h('p', { class: 'not', text: 'Eşleşmeyi AI, besin listenizden seçti; kontrol edin.' }) : null,
+            mod === 'besin' ? h('p', { class: 'not', text: 'Veritabanında eşleşme seçiliyse bu kalem kaydedilmez (zaten listenizde var).' }) : null,
             oneriler.length ? null : h('p', { class: 'not', text: 'Eşleşme yok; eklenirse AI’nin yaklaşık değerleriyle "kendi besinim" olarak kaydedilir (doğrulanmamış).' })),
           h('td', {}, gramInp, ' g', porKap),
           ozet.eleman));
@@ -800,43 +819,55 @@
       });
       toplamCiz();
 
+      /* Seçili satır için besin kimliği: eşleşme varsa o, yoksa "(AI tahmini)" kendi besin kaydı oluşturulur. */
+      function besinKimligi(s, g) {
+        if (s.sec.value) return Promise.resolve(s.sec.value);
+        var k = s.kalem;
+        var kayit = {
+          id: 'k-' + yeniId(),
+          ad: (s.adInp.value.trim() || k.ad) + ' (AI tahmini)',
+          kategori: 'AI fotoğraf tahmini',
+          varsayilan_g: g,
+          porsiyonlar: [{ ad: '1 porsiyon', g: g }],
+          degerler: { kcal: k.kcal_100g, protein: k.protein_100g, karb: k.karb_100g, yag: k.yag_100g },
+          barkod: null,
+          guncellendi: new Date().toISOString()
+        };
+        return Storage.putOzelBesin(kayit).then(besinListesiniTazele).then(function () { return kayit.id; });
+      }
+
       function ekle() {
-        var secilenler = satirlar.filter(function (s) { return s.dahil.checked; });
-        if (!secilenler.length) { durum.textContent = 'En az bir besin seçili olmalı.'; durum.className = 'durum hata'; return; }
-        var zincirle = Promise.resolve();
+        var secilenler = satirlar.filter(function (s) { return s.dahil.checked && !(mod === 'besin' && s.sec.value); });
+        if (!secilenler.length) {
+          durum.textContent = mod === 'besin' ? 'Kaydedilecek eşleşmeyen besin yok (veritabanında olanlar kaydedilmez).' : 'En az bir besin seçili olmalı.';
+          durum.className = 'durum hata'; return;
+        }
+        var liste = [], zincirle = Promise.resolve();
         secilenler.forEach(function (s) {
           zincirle = zincirle.then(function () {
             var g = sayi(s.gramInp.value);
-            if (!(g > 0)) return Promise.resolve();
-            var besinIdSoz;
-            if (s.sec.value) {
-              besinIdSoz = Promise.resolve(s.sec.value);
-            } else {
-              var k = s.kalem;
-              var kayit = {
-                id: 'k-' + yeniId(),
-                ad: (s.adInp.value.trim() || k.ad) + ' (AI tahmini)',
-                kategori: 'AI fotoğraf tahmini',
-                varsayilan_g: g,
-                porsiyonlar: [{ ad: '1 porsiyon', g: g }],
-                degerler: { kcal: k.kcal_100g, protein: k.protein_100g, karb: k.karb_100g, yag: k.yag_100g },
-                barkod: null,
-                guncellendi: new Date().toISOString()
-              };
-              besinIdSoz = Storage.putOzelBesin(kayit).then(besinListesiniTazele).then(function () { return kayit.id; });
-            }
-            return besinIdSoz.then(function (besinId) {
-              var simdi = new Date();
-              var log = { id: yeniId(), tarih: gun.tarih, ogun: og, besin_id: besinId, miktar_g: g,
-                saat: pad(simdi.getHours()) + ':' + pad(simdi.getMinutes()) };
-              return Storage.putLog(log).then(function () { return Storage.touchRecent(besinId); });
-            });
+            if (!(g > 0)) return null;
+            return besinKimligi(s, g).then(function (id) { liste.push({ besin_id: id, gram: g }); });
           });
         });
-        zincirle.then(function () { return Storage.listRecents(); }).then(function (r) {
-          state.recents = r; if (bitince) bitince();
+        zincirle.then(function () {
+          if (mod === 'tarif') { if (bitince) bitince(liste); return null; }
+          if (mod === 'besin') { if (bitince) bitince(liste.length); return null; }
+          var logZinciri = Promise.resolve();
+          liste.forEach(function (x) {
+            logZinciri = logZinciri.then(function () {
+              var simdi = new Date();
+              var log = { id: yeniId(), tarih: gun.tarih, ogun: og, besin_id: x.besin_id, miktar_g: x.gram,
+                saat: pad(simdi.getHours()) + ':' + pad(simdi.getMinutes()) };
+              return Storage.putLog(log).then(function () { return Storage.touchRecent(x.besin_id); });
+            });
+          });
+          return logZinciri.then(function () { return Storage.listRecents(); }).then(function (r) {
+            state.recents = r; if (bitince) bitince();
+          });
         }).catch(function (e) { durum.textContent = 'Kaydedilemedi: ' + ((e && e.message) || e); durum.className = 'durum hata'; });
       }
+      var ekleMetni = mod === 'tarif' ? 'Tarife ekle' : mod === 'besin' ? 'Eşleşmeyenleri kendi besinim olarak kaydet' : OGUN_AD[og] + ' öğününe ekle';
 
       dlg.textContent = '';
       dlg.appendChild(ust('Tanınan besinler'));
@@ -846,7 +877,7 @@
           h('th', { 'aria-label': 'Dahil et' }), h('th', { text: 'Besin' }), h('th', { text: 'Miktar' }), h('th', { class: 'sayi', text: 'Değerler' }))), tb,
           h('tfoot', {}, h('tr', { class: 'foto-toplam' }, h('td'), h('td', { text: 'Toplam (seçili)' }), h('td'), toplamHucre.eleman)))),
         h('div', { class: 'araclar' },
-          h('button', { type: 'button', text: OGUN_AD[og] + ' öğününe ekle', onclick: ekle }),
+          h('button', { type: 'button', text: ekleMetni, onclick: ekle }),
           h('button', { type: 'button', class: 'ikincil', text: '‹ Yeniden çek', onclick: cekimAdimi })),
         durum));
     }
@@ -2254,7 +2285,16 @@
         .catch(function (e) { durum.textContent = 'Kaydedilemedi: ' + ((e && e.message) || e); durum.className = 'durum hata'; });
     }
 
+    function fotoylaEkle() {
+      fotoTaniPenceresi(null, function (liste) {
+        liste.forEach(function (x) { bilesenler.push({ besin_id: x.besin_id, gram: x.gram }); });
+        ciz();
+        tarifPenceresiniGoster();
+      }, 'tarif', function () { tarifPenceresiniGoster(); });
+    }
+
     function tarifPenceresiniGoster() {
+      dlg.onclick = function (e) { if (e.target === dlg) dlg.close(); };
       dlg.textContent = '';
       dlg.appendChild(h('div', { class: 'd-ust' },
         h('h2', { text: mevcut ? 'Tarifi düzenle' : 'Tarif oluştur' }),
@@ -2264,7 +2304,8 @@
         h('h3', { text: 'Bileşenler' }),
         listeKap,
         h('div', { class: 'araclar' },
-          h('button', { type: 'button', class: 'ikincil', text: '+ Bileşen ekle', onclick: bilesenEkle })),
+          h('button', { type: 'button', class: 'ikincil', text: '+ Bileşen ekle', onclick: bilesenEkle }),
+          h('button', { type: 'button', class: 'ikincil', text: 'Fotoğrafla ekle', onclick: fotoylaEkle })),
         h('h3', { text: 'Toplam ağırlık' }),
         h('p', { class: 'aciklama', text: 'Bileşenlerin toplamı otomatik yazılır. Pişirmede su kaybı varsa pişmiş ağırlığı elle yazın; değerler bu ağırlığa göre 100 g başına hesaplanır.' }),
         h('div', { class: 'form-satir' }, h('label', {}, 'Toplam ağırlık (g) ', toplamG),
