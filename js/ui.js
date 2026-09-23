@@ -508,8 +508,10 @@
      otomatik kaydedilmez; kullanıcı her kalemi gözden geçirip miktarı/eşleşmeyi
      düzenledikten sonra "Öğüne ekle" ile onaylar. */
 
-  var GEMINI_VARSAYILAN_MODEL = 'gemini-2.0-flash';
-  var GEMINI_YEDEK_MODELLER = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  /* Google eski modelleri kapatabiliyor (gemini-2.0-flash 2026'da kapatıldı): model "artık yok/bulunamadı"
+     derse sıradaki yedeğe geçilir ve çalışan model ayara kaydedilir (bkz. geminiModelleriDene). */
+  var GEMINI_VARSAYILAN_MODEL = 'gemini-3.6-flash';
+  var GEMINI_YEDEK_MODELLER = ['gemini-3.6-flash', 'gemini-flash-latest'];
   var GEMINI_ZAMAN_ASIMI_MS = 45000;
 
   /* İstemin ana metni. Uygulamanın kendi besin listesi (kimlik|ad) eklenir: model mümkünse
@@ -552,8 +554,10 @@
         root.clearTimeout(zaman);
         if (r.ok) return r.json();
         return r.json().catch(function () { return null; }).then(function (h) {
-          var hata = new Error(geminiHataMetni(r.status, h && h.error && h.error.message));
-          hata.durum = r.status;
+          var ham = h && h.error && h.error.message;
+          var hata = new Error(/no longer available|not found|not supported/i.test(ham || '') && r.status !== 404
+            ? 'Model artık kullanılamıyor. Ayarlar sayfasında model adını güncelleyin.' : geminiHataMetni(r.status, ham));
+          hata.durum = r.status; hata.ham = ham;
           if ((r.status === 429 || r.status === 500 || r.status === 503) && deneme < 2) {
             return beklet(2000 * (deneme + 1)).then(function () { return geminiIstek(url, govde, deneme + 1); });
           }
@@ -570,8 +574,12 @@
   function geminiModelleriDene(modeller, govde, apiAnahtari) {
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modeller[0]) +
       ':generateContent?key=' + encodeURIComponent(apiAnahtari);
-    return geminiIstek(url, govde).catch(function (e) {
-      if (e && e.durum === 404 && modeller.length > 1) return geminiModelleriDene(modeller.slice(1), govde, apiAnahtari);
+    return geminiIstek(url, govde).then(function (data) {
+      if (data) data.__model = modeller[0];
+      return data;
+    }, function (e) {
+      var modelYok = e && (e.durum === 404 || /no longer available|not found|not supported/i.test(e.ham || ''));
+      if (modelYok && modeller.length > 1) return geminiModelleriDene(modeller.slice(1), govde, apiAnahtari);
       throw e;
     });
   }
@@ -595,7 +603,7 @@
       try { ayrisik = JSON.parse(metin); } catch (e) { throw new Error('Yanıt JSON olarak ayrıştırılamadı.'); }
       if (!Array.isArray(ayrisik)) throw new Error('Yanıt beklenen biçimde değil (dizi bekleniyor).');
       function say(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
-      return ayrisik.map(function (o) {
+      var sonuc = ayrisik.map(function (o) {
         o = o || {};
         var f = (typeof o.besin_id === 'string' && Foods.BY_ID[o.besin_id] && !Foods.BY_ID[o.besin_id].tarif) ? Foods.BY_ID[o.besin_id] : null;
         var ad = (typeof o.ad === 'string' && o.ad.trim()) ? o.ad.trim() : (f ? f.ad : 'Bilinmeyen besin');
@@ -609,6 +617,8 @@
           yag_100g: f ? null : say(o.yag_100g)
         };
       }).filter(function (o) { return o.besin_id || o.ad !== 'Bilinmeyen besin' || o.kcal_100g != null; });
+      sonuc.model = data.__model; /* gerçekten çalışan model (yedeğe düşüldüyse ayara yazılır) */
+      return sonuc;
     });
   }
 
@@ -703,6 +713,7 @@
             var virgul = dataUrl.indexOf(',');
             var base64Veri = dataUrl.slice(virgul + 1);
             geminiFotoTani(base64Veri, 'image/jpeg', apiAnahtari, model, kullaniciNotu.trim()).then(function (kalemler) {
+              if (kalemler.model && kalemler.model !== model) Storage.setSetting('geminiModel', kalemler.model);
               if (dur) return;
               if (!kalemler.length) { mesgul(false); durum.textContent = 'Fotoğrafta besin tanınamadı. Farklı bir fotoğrafla tekrar deneyin.'; durum.className = 'durum hata'; return; }
               sonucAdimi(kalemler);
